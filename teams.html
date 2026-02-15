@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teams | HoopWatch</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Page header -->
+  <header>
+    <div class="container">
+      <div class="header-brand">
+        <img class="brand-logo" src="http://localhost:8000/assets/HoopWatch1.png" alt="HoopWatch logo" />
+        <div>
+          <h1 class="brand-title">HoopWatch</h1>
+          <p class="muted">Browse all teams in the league.</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content container -->
+  <main class="container">
+    <!-- Sorting controls -->
+    <div style="background: #fff; padding: 16px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+      <label for="sortSelect" style="margin-right: 12px; font-weight: 600; font-size: 15px;">Sort by:</label>
+      <select id="sortSelect" style="padding: 10px 16px; border-radius: 8px; border: 2px solid #2563eb; font-size: 15px; font-weight: 500; cursor: pointer;">
+        <option value="name">A-Z</option>
+        <option value="conference">Conference</option>
+        <option value="wins">Wins (High to Low)</option>
+        <option value="losses">Losses (High to Low)</option>
+      </select>
+    </div>
+
+    <!-- Teams list container -->
+    <div id="teamsWrapper">
+      <section id="teams" class="teams-grid"></section>
+    </div>
+  </main>
+
+  <script>
+    // Get a reference to the container where team cards will be rendered
+    const teamsWrapper = document.getElementById("teamsWrapper");
+    const sortSelect = document.getElementById("sortSelect");
+
+    // Mock data to use if the API is not available yet
+    const mockTeams = [
+      { id: 1, name: "Lakers", city: "Los Angeles", conference: "West", wins: 44, losses: 28 },
+      { id: 2, name: "Celtics", city: "Boston", conference: "East", wins: 41, losses: 12 },
+      { id: 3, name: "Bulls", city: "Chicago", conference: "East", wins: 24, losses: 29 },
+      { id: 4, name: "Warriors", city: "San Francisco", conference: "West", wins: 30, losses: 23 }
+    ];
+
+    // Create a team card element
+    function createTeamCard(team) {
+      const card = document.createElement("a");
+      card.className = "team-card";
+      card.href = `team.html?id=${team.id}`;
+
+      card.innerHTML = `
+        <h2 style="margin-bottom: 12px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;">${team.name}</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px;">
+          <div><strong>City:</strong></div>
+          <div>${team.city || 'N/A'}</div>
+          
+          <div><strong>Conference:</strong></div>
+          <div>${team.conference}</div>
+          
+          <div><strong>Wins:</strong></div>
+          <div style="color: #16a34a; font-weight: 600;">${team.wins || 0}</div>
+          
+          <div><strong>Losses:</strong></div>
+          <div style="color: #dc2626; font-weight: 600;">${team.losses || 0}</div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    // Render teams - split by conference if needed
+    function renderTeams(teams, sortBy) {
+      teamsWrapper.innerHTML = "";
+
+      if (sortBy === 'conference') {
+        // Split into East and West columns
+        const eastTeams = teams.filter(t => t.conference === 'East');
+        const westTeams = teams.filter(t => t.conference === 'West');
+
+        const conferenceGrid = document.createElement('div');
+        conferenceGrid.style.display = 'grid';
+        conferenceGrid.style.gridTemplateColumns = '1fr 1fr';
+        conferenceGrid.style.gap = '24px';
+
+        // Eastern Conference column
+        const eastColumn = document.createElement('div');
+        eastColumn.innerHTML = '<h2 style="margin-bottom: 16px; padding: 12px; background: #dbeafe; border-radius: 8px; text-align: center;">Eastern Conference</h2>';
+        const eastGrid = document.createElement('div');
+        eastGrid.className = 'teams-grid';
+        eastGrid.style.gridTemplateColumns = '1fr';
+        eastTeams.forEach(team => eastGrid.appendChild(createTeamCard(team)));
+        eastColumn.appendChild(eastGrid);
+
+        // Western Conference column
+        const westColumn = document.createElement('div');
+        westColumn.innerHTML = '<h2 style="margin-bottom: 16px; padding: 12px; background: #fef3c7; border-radius: 8px; text-align: center;">Western Conference</h2>';
+        const westGrid = document.createElement('div');
+        westGrid.className = 'teams-grid';
+        westGrid.style.gridTemplateColumns = '1fr';
+        westTeams.forEach(team => westGrid.appendChild(createTeamCard(team)));
+        westColumn.appendChild(westGrid);
+
+        conferenceGrid.appendChild(eastColumn);
+        conferenceGrid.appendChild(westColumn);
+        teamsWrapper.appendChild(conferenceGrid);
+      } else {
+        // Regular grid layout
+        const grid = document.createElement('section');
+        grid.className = 'teams-grid';
+        teams.forEach(team => grid.appendChild(createTeamCard(team)));
+        teamsWrapper.appendChild(grid);
+      }
+    }
+
+    // Fetch teams from Flask API
+    async function loadTeams(sortBy = 'name') {
+      try {
+        const response = await fetch(`http://localhost:8000/api/teams?sort=${sortBy}`);
+        if (!response.ok) {
+          throw new Error("Failed to fetch teams from API");
+        }
+        const teams = await response.json();
+        renderTeams(teams, sortBy);
+      } catch (error) {
+        console.warn("API unavailable, using mock data:", error);
+        renderTeams(mockTeams, sortBy);
+      }
+    }
+
+    // Listen for sort changes
+    sortSelect.addEventListener('change', (e) => {
+      loadTeams(e.target.value);
+    });
+
+    // Load teams when the page is ready
+    loadTeams();
+  </script>
+</body>
+</html>
