@@ -17,7 +17,7 @@ CORS(app)
 db_config = {
     'host': 'localhost',
     'user': 'root',        # Change if needed
-    'password': 'SGabriel79$',        # Change if needed
+    'password': 'YOURPASSWORDHERE',        # Change if needed
     'database': 'hoopwatch'
 }
 
@@ -70,15 +70,14 @@ def get_teams():
             SELECT 
                 t.team_id as id,
                 t.name,
-                tl.city,
+                t.city,
                 t.conference,
-                ts.wins,
-                ts.losses
-            FROM teams t
-            LEFT JOIN team_locations tl ON t.team_id = tl.team_id
-            LEFT JOIN team_standings ts ON t.team_id = ts.team_id
-            ORDER BY {order_clause}
-        """
+                COALESCE(ts.wins, 0) as wins,
+                COALESCE(ts.losses, 0) as losses
+        FROM teams t
+        LEFT JOIN team_standings ts ON t.team_id = ts.team_id
+        ORDER BY {order_clause}
+    """
         cursor.execute(query)
         teams = cursor.fetchall()
         cursor.close()
@@ -104,12 +103,11 @@ def get_team_details(team_id):
             SELECT 
                 t.team_id as id,
                 t.name,
-                tl.city,
-                tl.arena_name as arena,
-                ts.wins,
-                ts.losses
+                t.city,
+                t.arena_name as arena,
+                COALESCE(ts.wins, 0) as wins,
+                COALESCE(ts.losses, 0) as losses
             FROM teams t
-            LEFT JOIN team_locations tl ON t.team_id = tl.team_id
             LEFT JOIN team_standings ts ON t.team_id = ts.team_id
             WHERE t.team_id = %s
         """

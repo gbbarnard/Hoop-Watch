@@ -16,32 +16,26 @@ CREATE TABLE users (
 ) ENGINE=InnoDB;
 
 -- ---------- TEAMS + LOCATIONS ----------
-CREATE TABLE teams (
-  team_id       INT AUTO_INCREMENT PRIMARY KEY,
-  nba_team_id   VARCHAR(32) NULL UNIQUE,     -- keep for later API mapping, optional now
-  name          VARCHAR(120) NOT NULL,
-  abbreviation  VARCHAR(10) NOT NULL UNIQUE,
-  conference    ENUM('East','West') NOT NULL,
-  logo_url      VARCHAR(500) NULL
-) ENGINE=InnoDB;
+DROP TABLE IF EXISTS teams;
 
-CREATE TABLE team_locations (
-  location_id   INT AUTO_INCREMENT PRIMARY KEY,
-  team_id       INT NOT NULL UNIQUE,
-  city          VARCHAR(80) NOT NULL,
-  state         VARCHAR(40) NULL,
-  country       VARCHAR(60) NOT NULL DEFAULT 'USA',
-  arena_name    VARCHAR(120) NULL,
-  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_team_locations_team
-    FOREIGN KEY (team_id) REFERENCES teams(team_id)
-    ON DELETE CASCADE ON UPDATE CASCADE
+CREATE TABLE teams (
+  team_id INT AUTO_INCREMENT PRIMARY KEY,
+  nba_team_id VARCHAR(32) NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  abbreviation VARCHAR(10) NOT NULL UNIQUE,
+  conference ENUM('East','West') NOT NULL,
+  logo_url VARCHAR(500) NULL,
+
+  city VARCHAR(80) NOT NULL,
+  state VARCHAR(40) NULL,
+  country VARCHAR(60) NOT NULL DEFAULT 'USA',
+  arena_name VARCHAR(120) NULL
 ) ENGINE=InnoDB;
 
 -- ---------- PLAYERS ----------
 CREATE TABLE players (
   player_id      INT AUTO_INCREMENT PRIMARY KEY,
-  nba_player_id  VARCHAR(32) NULL UNIQUE,  -- for later API mapping
+  nba_player_id  VARCHAR(32) NULL UNIQUE, 
   team_id        INT NULL,
   first_name     VARCHAR(60) NOT NULL,
   last_name      VARCHAR(60) NOT NULL,
@@ -73,7 +67,7 @@ CREATE TABLE team_standings (
 -- ---------- GAMES + CACHE ----------
 CREATE TABLE games (
   game_id        INT AUTO_INCREMENT PRIMARY KEY,
-  nba_game_id    VARCHAR(32) NULL UNIQUE,  -- for later API mapping
+  nba_game_id    VARCHAR(32) NULL UNIQUE, 
   home_team_id   INT NOT NULL,
   away_team_id   INT NOT NULL,
   game_date      DATE NOT NULL,
