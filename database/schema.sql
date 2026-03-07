@@ -242,3 +242,5 @@ CREATE TABLE game_comments (
   INDEX idx_gc_game (game_id),
   INDEX idx_gc_parent (parent_comment_id)
 ) ENGINE=InnoDB;
+
+
