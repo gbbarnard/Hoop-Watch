@@ -15,7 +15,7 @@ CREATE TABLE users (
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- ---------- TEAMS + LOCATIONS ----------
+-- ---------- TEAMS ----------
 DROP TABLE IF EXISTS teams;
 
 CREATE TABLE teams (
