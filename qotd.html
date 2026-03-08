@@ -3,60 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <title>Question of the Day</title>
-<style>
-body {
-  font-family: Arial;
-  background: #f4f4f4;
-  padding: 20px;
-}
-.container {
-  max-width: 800px;
-  margin: auto;
-}
-.card {
-  background: white;
-  padding: 20px;
-  border-radius: 10px;
-  margin-top: 20px;
-}
-.comment {
-  background: #f1f1f1;
-  padding: 10px;
-  border-radius: 8px;
-  margin-top: 10px;
-}
-.reply {
-  background: #e5e5e5;
-  padding: 8px;
-  border-radius: 6px;
-  margin-left: 30px;
-  margin-top: 5px;
-}
-button {
-  padding: 6px 10px;
-  background: black;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  margin-top: 5px;
-}
-input, textarea {
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px;
-  box-sizing: border-box;
-}
-.reply-box {
-  margin-top: 8px;
-}
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="qotd-background">
 
-<div class="container">
-  <h1>Question of the Day</h1>
-  <input type="date" id="dateSelector">
+<div class="qotd-panel">
+  <h1 class="qotd-title">Question of the Day</h1>
+  <input type="date" id="dateSelector" class="qotd-date">
   <div id="questionContainer"></div>
 </div>
 
@@ -80,23 +33,29 @@ async function loadQuestion() {
   container.innerHTML = "";
 
   if (!question || !question.question_id) {
-    container.innerHTML = "<p>No question for this date.</p>";
-    return;
+  container.innerHTML = `
+    <div class="qotd-empty">
+      <p class="no-question">No question for this date.</p>
+    </div>
+  `;
+  return;
   }
 
   currentQuestionId = question.question_id;
 
   container.innerHTML = `
-    <div class="card">
-      <h2>${question.question_text}</h2>
+  <div class="qotd-card">
+    <h2 class="qotd-question">${question.question_text}</h2>
 
-      <input type="number" id="userId" placeholder="Your user ID">
-      <textarea id="commentText" rows="3" placeholder="Write comment..."></textarea>
-      <button onclick="postComment(null)">Post Comment</button>
-
-      <div id="comments"></div>
+    <div class="qotd-comment-form">
+      <input type="number" id="userId" class="qotd-input" placeholder="Your user ID">
+      <textarea id="commentText" class="qotd-textarea" rows="3" placeholder="Write comment..."></textarea>
+      <button class="button" onclick="postComment(null)">Post Comment</button>
     </div>
-  `;
+
+    <div id="comments"></div>
+  </div>
+`;
 
   loadComments();
 }
@@ -116,6 +75,11 @@ function renderComments() {
 
   const topLevel = allComments.filter(c => !c.parent_comment_id);
 
+  if (!topLevel.length) {
+    container.innerHTML = `<p class="qotd-empty">No comments yet.</p>`;
+    return;
+  }
+
   topLevel.forEach(comment => {
     container.appendChild(createCommentElement(comment, false));
   });
@@ -123,11 +87,26 @@ function renderComments() {
 
 function createCommentElement(comment, isReply) {
   const div = document.createElement("div");
-  div.className = isReply ? "reply" : "comment";
+  div.className = isReply ? "qotd-reply" : "qotd-comment";
+
   div.innerHTML = `
-    <strong>${comment.user_name || comment.user_id}</strong>
-    <p>${comment.comment_text}</p>
-    <button onclick="showReplyBox(${comment.comment_id}, this)">Reply</button>
+    <div class="qotd-comment-header">${comment.user_name || comment.user_id}</div>
+    <p class="qotd-comment-text">${comment.comment_text}</p>
+
+    <div class="qotd-actions">
+      <button class="vote-btn" onclick="voteComment(${comment.comment_id}, 1)">
+        ▲ ${comment.upvotes ?? 0}
+      </button>
+
+      <button class="vote-btn" onclick="voteComment(${comment.comment_id}, -1)">
+        ▼ ${comment.downvotes ?? 0}
+      </button>
+
+      <button class="reply-btn" onclick="showReplyBox(${comment.comment_id}, this)">
+        Reply
+      </button>
+    </div>
+
     <div class="replies"></div>
   `;
 
@@ -145,7 +124,11 @@ function createCommentElement(comment, isReply) {
 }
 
 function showReplyBox(parentId, button) {
-  if (button.nextElementSibling && button.nextElementSibling.classList.contains("reply-box")) {
+  if (
+    button.parentElement.nextElementSibling &&
+    button.parentElement.nextElementSibling.classList &&
+    button.parentElement.nextElementSibling.classList.contains("reply-box")
+  ) {
     return;
   }
 
@@ -154,10 +137,10 @@ function showReplyBox(parentId, button) {
   replyBox.innerHTML = `
     <input type="number" placeholder="Your user ID" class="replyUser">
     <textarea rows="2" placeholder="Write reply..." class="replyText"></textarea>
-    <button onclick="submitReply(${parentId}, this)">Post Reply</button>
+    <button class="button" onclick="submitReply(${parentId}, this)">Post Reply</button>
   `;
 
-  button.parentElement.appendChild(replyBox);
+  button.parentElement.parentElement.appendChild(replyBox);
 }
 
 async function submitReply(parentId, button) {
@@ -204,6 +187,32 @@ async function postComment(parentId, customUser = null, customText = null) {
 }
 
 loadQuestion();
+
+async function voteComment(commentId, vote) {
+  const userId = prompt("Enter your user ID for voting:");
+  if (!userId) {
+    alert("User ID is required to vote.");
+    return;
+  }
+
+  const res = await fetch("http://localhost:8000/api/qotd/vote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      comment_id: commentId,
+      user_id: parseInt(userId),
+      vote_value: vote
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    alert("Error: " + (err.error || "Failed to vote"));
+    return;
+  }
+
+  loadComments();
+}
 </script>
 
 </body>

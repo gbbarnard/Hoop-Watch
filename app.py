@@ -226,61 +226,6 @@ def admin_sync():
 
     return {"message":"teams synced"}
 
-@app.route('/api/teams', methods=['GET'])
-def get_teams():
-
-    # fetch teams from DB
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-
-    cursor.execute("SELECT team_id, name, city, abbreviation FROM teams")
-    db_teams = cursor.fetchall()
-
-    cursor.close()
-    connection.close()
-
-    # fetch NBA standings
-    standings = leaguestandings.LeagueStandings().get_dict()
-
-    headers = standings["resultSets"][0]["headers"]
-    rows = standings["resultSets"][0]["rowSet"]
-
-    # find correct column indexes
-    team_id_idx = headers.index("TeamID")
-    wins_idx = headers.index("WINS")
-    losses_idx = headers.index("LOSSES")
-
-    standings_map = {}
-
-    for row in rows:
-
-        team_id = row[team_id_idx]
-        wins = int(row[wins_idx])
-        losses = int(row[losses_idx])
-
-        standings_map[team_id] = {
-            "wins": wins,
-            "losses": losses
-        }
-
-    teams = []
-
-    for team in db_teams:
-
-        record = standings_map.get(team["team_id"], {"wins":0,"losses":0})
-
-        teams.append({
-            "id": team["team_id"],
-            "name": team["name"],
-            "city": team["city"],
-            "abbreviation": team["abbreviation"],
-            "wins": record["wins"],
-            "losses": record["losses"]
-        })
-
-    return jsonify(teams)
-
-
 @app.route('/api/teams/<int:team_id>', methods=['GET'])
 def get_team_details(team_id):
 
@@ -440,51 +385,44 @@ def get_qotd_comments(question_id):
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute("""
-            SELECT c.comment_id,
-                   c.question_id,
-                   c.user_id,
-                   c.parent_comment_id,
-                   c.comment_text,
-                   c.created_at,
-                   u.username as user_name
+            SELECT 
+                c.comment_id,
+                c.question_id,
+                c.user_id,
+                c.parent_comment_id,
+                c.comment_text,
+                c.created_at,
+                u.username AS user_name,
+
+                SUM(CASE WHEN v.vote_value = 1 THEN 1 ELSE 0 END) AS upvotes,
+                SUM(CASE WHEN v.vote_value = -1 THEN 1 ELSE 0 END) AS downvotes
+
             FROM qotd_comments c
             JOIN users u ON c.user_id = u.user_id
+            LEFT JOIN qotd_comment_votes v ON c.comment_id = v.comment_id
+
             WHERE c.question_id = %s
+
+            GROUP BY 
+                c.comment_id,
+                c.question_id,
+                c.user_id,
+                c.parent_comment_id,
+                c.comment_text,
+                c.created_at,
+                u.username
+
             ORDER BY c.created_at ASC
         """, (question_id,))
         comments = cursor.fetchall()
         cursor.close()
 
         return jsonify(comments), 200
+
     except Error as e:
         return jsonify({'error': str(e)}), 500
     finally:
         connection.close()
-
-
-# 🔹 Post comment or reply
-    cursor = connection.cursor(dictionary=True)
-
-    cursor.execute("""
-        SELECT c.comment_id,
-               c.question_id,
-               c.user_id,
-               c.parent_comment_id,
-               c.comment_text,
-               c.created_at,
-               u.username as user_name
-        FROM qotd_comments c
-        JOIN users u ON c.user_id = u.user_id
-        WHERE c.question_id = %s
-        ORDER BY c.created_at ASC
-    """, (question_id,))
-
-    comments = cursor.fetchall()
-
-    cursor.close()
-    connection.close()
-
-    return jsonify(comments)
 
 
 @app.route('/api/qotd/comment', methods=['POST'])
@@ -514,30 +452,44 @@ def post_qotd_comment():
         cursor.close()
 
         return jsonify({'message': 'Comment added'}), 201
+
     except Error as e:
         return jsonify({'error': str(e)}), 500
     finally:
         connection.close()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        INSERT INTO qotd_comments
-        (question_id, user_id, parent_comment_id, comment_text, created_at)
-        VALUES (%s, %s, %s, %s, NOW())
-    """, (
-        data['question_id'],
-        data['user_id'],
-        data.get('parent_comment_id'),
-        data['comment_text']
-    ))
 
-    connection.commit()
+@app.route('/api/qotd/vote', methods=['POST'])
+def vote_qotd_comment():
 
-    cursor.close()
-    connection.close()
+    data = request.json
 
-    return jsonify({'message': 'Comment added'}), 201
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
 
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            INSERT INTO qotd_comment_votes (comment_id, user_id, vote_value, created_at)
+            VALUES (%s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE vote_value = VALUES(vote_value)
+        """, (
+            data['comment_id'],
+            data['user_id'],
+            data['vote_value']
+        ))
+
+        connection.commit()
+        cursor.close()
+
+        return jsonify({'message': 'Vote recorded'}), 200
+
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
 
 # ================= HEALTH CHECK =================
 
