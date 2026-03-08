@@ -15,27 +15,33 @@ CREATE TABLE users (
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- ---------- TEAMS ----------
-DROP TABLE IF EXISTS teams;
-
+-- ---------- TEAMS + LOCATIONS ----------
 CREATE TABLE teams (
-  team_id INT AUTO_INCREMENT PRIMARY KEY,
-  nba_team_id VARCHAR(32) NULL UNIQUE,
-  name VARCHAR(120) NOT NULL,
-  abbreviation VARCHAR(10) NOT NULL UNIQUE,
-  conference ENUM('East','West') NOT NULL,
-  logo_url VARCHAR(500) NULL,
+  team_id       INT AUTO_INCREMENT PRIMARY KEY,
+  nba_team_id   VARCHAR(32) NULL UNIQUE,     -- keep for later API mapping, optional now
+  name          VARCHAR(120) NOT NULL,
+  abbreviation  VARCHAR(10) NOT NULL UNIQUE,
+  conference    ENUM('East','West') NOT NULL,
+  logo_url      VARCHAR(500) NULL
+) ENGINE=InnoDB;
 
-  city VARCHAR(80) NOT NULL,
-  state VARCHAR(40) NULL,
-  country VARCHAR(60) NOT NULL DEFAULT 'USA',
-  arena_name VARCHAR(120) NULL
+CREATE TABLE team_locations (
+  location_id   INT AUTO_INCREMENT PRIMARY KEY,
+  team_id       INT NOT NULL UNIQUE,
+  city          VARCHAR(80) NOT NULL,
+  state         VARCHAR(40) NULL,
+  country       VARCHAR(60) NOT NULL DEFAULT 'USA',
+  arena_name    VARCHAR(120) NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_team_locations_team
+    FOREIGN KEY (team_id) REFERENCES teams(team_id)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 -- ---------- PLAYERS ----------
 CREATE TABLE players (
   player_id      INT AUTO_INCREMENT PRIMARY KEY,
-  nba_player_id  VARCHAR(32) NULL UNIQUE, 
+  nba_player_id  VARCHAR(32) NULL UNIQUE,  -- for later API mapping
   team_id        INT NULL,
   first_name     VARCHAR(60) NOT NULL,
   last_name      VARCHAR(60) NOT NULL,
@@ -67,7 +73,7 @@ CREATE TABLE team_standings (
 -- ---------- GAMES + CACHE ----------
 CREATE TABLE games (
   game_id        INT AUTO_INCREMENT PRIMARY KEY,
-  nba_game_id    VARCHAR(32) NULL UNIQUE, 
+  nba_game_id    VARCHAR(32) NULL UNIQUE,  -- for later API mapping
   home_team_id   INT NOT NULL,
   away_team_id   INT NOT NULL,
   game_date      DATE NOT NULL,
@@ -242,5 +248,3 @@ CREATE TABLE game_comments (
   INDEX idx_gc_game (game_id),
   INDEX idx_gc_parent (parent_comment_id)
 ) ENGINE=InnoDB;
-
-

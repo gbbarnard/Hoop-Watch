@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Detail - Hoop Watch</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <a href="index.html" class="logo">
+                <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+                <span>Hoop Watch</span>
+            </a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div id="game-header" class="game-detail-header">
+            <div class="game-score-section">
+                <div class="team-score away-team-score">
+                    <img id="away-logo" class="team-logo-large" alt="Away Team">
+                    <div class="team-info">
+                        <h2 id="away-team-name"></h2>
+                        <div id="away-score" class="score"></div>
+                    </div>
+                </div>
+                
+                <div class="game-status-center">
+                    <div id="game-status" class="game-status-text"></div>
+                    <div id="game-time" class="game-time"></div>
+                </div>
+                
+                <div class="team-score home-team-score">
+                    <div class="team-info">
+                        <h2 id="home-team-name"></h2>
+                        <div id="home-score" class="score"></div>
+                    </div>
+                    <img id="home-logo" class="team-logo-large" alt="Home Team">
+                </div>
+            </div>
+            
+            <div id="quarter-scores" class="quarter-scores"></div>
+        </div>
+
+        <div class="stats-container">
+            <div class="stats-section">
+                <h3>Team Statistics</h3>
+                <div id="team-stats" class="team-stats-grid"></div>
+            </div>
+
+            <div class="box-score-section">
+                <h3 id="away-team-boxscore-title">Box Score</h3>
+                <div class="table-container">
+                    <table id="away-boxscore" class="boxscore-table"></table>
+                </div>
+
+                <h3 id="home-team-boxscore-title">Box Score</h3>
+                <div class="table-container">
+                    <table id="home-boxscore" class="boxscore-table"></table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="game-detail.js"></script>
+</body>
+</html>
