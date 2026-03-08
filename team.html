@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Team Details | Basketball App</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <!-- Page header -->
   <header>
@@ -22,7 +24,10 @@
 
     <!-- Team summary section -->
     <section class="team-summary" id="teamSummary">
-      <h2 id="teamName">Loading...</h2>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <img id="teamLogo" alt="Team logo" style="width:56px; height:56px; object-fit:contain;" />
+        <h2 id="teamName" style="margin:0;">Loading...</h2>
+      </div>
       <div class="summary-grid">
         <div class="summary-item"><strong>City:</strong> <span id="teamCity">-</span></div>
         <div class="summary-item"><strong>Arena:</strong> <span id="teamArena">-</span></div>
@@ -53,12 +58,15 @@
   </main>
 
   <script>
+    const API_BASE = "http://localhost:8000";
+
     // Read the team id from the URL query string
     const params = new URLSearchParams(window.location.search);
     const teamId = params.get("id");
 
     // Cache DOM elements for faster updates
     const teamName = document.getElementById("teamName");
+    const teamLogo = document.getElementById("teamLogo");
     const teamCity = document.getElementById("teamCity");
     const teamArena = document.getElementById("teamArena");
     const teamWins = document.getElementById("teamWins");
@@ -85,6 +93,15 @@
     // Render team details into the summary section
     function renderTeamDetails(team) {
       teamName.textContent = team.name;
+
+      // Set logo (API returns /static/... so we prefix API_BASE)
+      const logoSrc = team.logo_url
+        ? (team.logo_url.startsWith("http") ? team.logo_url : `${API_BASE}${team.logo_url}`)
+        : "";
+      teamLogo.src = logoSrc;
+      teamLogo.style.display = logoSrc ? "block" : "none";
+      teamLogo.onerror = () => { teamLogo.style.display = "none"; };
+
       teamCity.textContent = team.city;
       teamArena.textContent = team.arena;
       teamWins.textContent = team.wins;
@@ -96,18 +113,32 @@
       playersBody.innerHTML = "";
 
       if (!players.length) {
-        playersBody.innerHTML = "<tr><td colspan=\"4\">No players found.</td></tr>";
+        playersBody.innerHTML = `<tr><td colspan="4">No players found.</td></tr>`;
         return;
       }
 
       players.forEach((player) => {
         const row = document.createElement("tr");
+
+        const headshot = player.headshot_url
+          ? (player.headshot_url.startsWith("http") ? player.headshot_url : `${API_BASE}${player.headshot_url}`)
+          : `${API_BASE}/static/Headshots/placeholder.png`;
+
         row.innerHTML = `
-          <td>${player.name}</td>
-          <td>${player.position}</td>
-          <td>${player.jersey}</td>
-          <td>${player.height}</td>
-        `;
+      <td style="display:flex;align-items:center;gap:10px;">
+        <img
+          src="${player.headshot_url}"
+          alt="${player.name}"
+          loading="lazy"
+          onerror="this.onerror=null; this.src='/static/Headshots/placeholder.png';"
+        />
+        ${player.name}
+      </td>
+      <td>${player.position || ""}</td>
+      <td>${player.jersey ?? ""}</td>
+      <td>${player.height || ""}</td>
+    `;
+
         playersBody.appendChild(row);
       });
     }
@@ -157,4 +188,5 @@
     loadPlayers();
   </script>
 </body>
+
 </html>

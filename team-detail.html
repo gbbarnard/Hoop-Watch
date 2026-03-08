@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Details - Hoop Watch</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="back-link">← Back to Games</a>
+    </nav>
+    
+    <div class="container">
+        <div class="team-header" id="team-header">
+            <div id="team-logo" class="team-logo">🏀</div>
+            <h1 id="team-name"></h1>
+            <p id="team-record" class="team-record"></p>
+            <p id="team-win-rate" class="team-win-rate"></p>
+        </div>
+        
+        <div class="roster-section">
+            <h2>Roster</h2>
+            <table class="roster-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Player Name</th>
+                        <th>Position</th>
+                        <th>Height</th>
+                    </tr>
+                </thead>
+                <tbody id="roster-tbody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script src="team-detail.js"></script>
+</body>
+</html>
