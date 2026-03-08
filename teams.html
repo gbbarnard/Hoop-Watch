@@ -6,6 +6,7 @@
   <title>Teams | HoopWatch</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+<<<<<<< HEAD
 <body>
   <!-- Page header -->
   <header>
@@ -145,5 +146,57 @@
     // Load teams when the page is ready
     loadTeams();
   </script>
+=======
+
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <img class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png" alt="HoopWatch" />
+      <span class="brand-name">HoopWatch</span>
+    </div>
+    <ul class="nav-menu">
+      <li><a href="index.html">Games</a></li>
+      <li><a href="teams.html" class="active">Teams</a></li>
+      <li><a href="qotd.html">QOTD</a></li>
+    </ul>
+  </nav>
+
+  <main class="container">
+    <div class="hero-section" style="text-align:left;">
+      <h1>Teams</h1>
+      <p>Browse all teams in the league.</p>
+      <a href="index.html" class="back-link" style="margin-top:10px;">← Back to Games</a>
+    </div>
+
+    <div style="background:#fff;padding:16px;border-radius:16px;margin-bottom:24px;border:1px solid var(--border-color);box-shadow:0 2px 10px rgba(0,0,0,0.06);">
+      <div style="display:grid;grid-template-columns: 1.8fr 1fr 1fr;gap:12px;align-items:end;">
+        <div>
+          <label for="searchInput" style="display:block;font-weight:700;margin-bottom:6px;">Search</label>
+          <input id="searchInput" class="search-input" placeholder="Search by team name, city, or abbreviation..." />
+        </div>
+        <div>
+          <label for="confSelect" style="display:block;font-weight:700;margin-bottom:6px;">Conference</label>
+          <select id="confSelect" class="search-input" style="cursor:pointer;">
+            <option value="all">All</option>
+            <option value="East">East</option>
+            <option value="West">West</option>
+          </select>
+        </div>
+        <div>
+          <label for="sortSelect" style="display:block;font-weight:700;margin-bottom:6px;">Sort</label>
+          <select id="sortSelect" class="search-input" style="cursor:pointer;">
+            <option value="name">A-Z</option>
+            <option value="wins">Wins (High to Low)</option>
+            <option value="losses">Losses (High to Low)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <section id="teams" class="teams-grid"></section>
+  </main>
+
+  <script src="teams.js"></script>
+>>>>>>> main
 </body>
 </html>
