@@ -1,4 +1,6 @@
-const API_URL = 'http://localhost:8000';
+const API_URL = 'http://127.0.0.1:5000';
+
+
 
 // NBA team logo URLs from official sources
 const teamLogos = {

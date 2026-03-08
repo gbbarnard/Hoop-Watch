@@ -31,7 +31,7 @@ db_config = {
     "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
     "port": int(os.environ.get("MYSQL_PORT", "3306")),
     "user": os.environ.get("MYSQL_USER", "root"),
-    "password": os.environ.get("MYSQL_PASSWORD", ""),  # set in env if needed
+    "password": os.environ.get("MYSQL_PASSWORD", "Junopull123$"),  # set in env if needed
     # Support either MYSQL_DATABASE or MYSQL_DB
     "database": os.environ.get("MYSQL_DATABASE") or os.environ.get("MYSQL_DB") or "hoopwatch",
 }
@@ -1195,7 +1195,7 @@ def serve_static(filename):
 
 if __name__ == '__main__':
 
-    print("Starting Flask API server on http://localhost:8000")
+    print("Starting Flask API server on 'http://127.0.0.1:5000';")
 
     print("\nBasketball Endpoints:")
     print("GET /api/teams")

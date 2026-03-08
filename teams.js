@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+const API_URL = 'http://127.0.0.1:5000';
 
 const teamsEl = document.getElementById("teams");
 const searchInput = document.getElementById("searchInput");
@@ -108,7 +108,7 @@ async function loadTeams() {
   teamsEl.innerHTML = `<div class="loading">Loading teams...</div>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/teams`);
+    const res = await fetch(`${API_URL}/api/teams`);
     const data = await res.json();
 
     if (!res.ok) {
@@ -123,7 +123,7 @@ async function loadTeams() {
     teamsEl.innerHTML = `
       <div class="error-message">
         <strong>Could not load teams</strong><br/>
-        Make sure your backend is running on <code>${API_BASE}</code> and MySQL is configured.<br/>
+        Make sure your backend is running on <code>${API_URL}</code> and MySQL is configured.<br/>
         <div style="margin-top:8px;">Error: <code>${safeText(err.message)}</code></div>
       </div>
     `;
