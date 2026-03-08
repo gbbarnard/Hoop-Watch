@@ -621,6 +621,20 @@ body {
     margin-bottom: 2rem;
 }
 
+.game-arena {
+  margin-top: 8px;
+  font-size: 14px;
+  color: black;
+  font-weight: 500;
+}
+
+.team-arena {
+    font-size: 16px;
+    color: black;
+    margin-top: 6px;
+    font-weight: 500;
+}
+
 .team-score {
     display: flex;
     align-items: center;
@@ -1052,3 +1066,26 @@ body {
 
   z-index: -1;
 }
+
+.qotd-shell {
+      background: #fff;
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    }
+
+    .qotd-topbar {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .qotd-date-wrap label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }

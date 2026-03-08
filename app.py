@@ -31,7 +31,7 @@ db_config = {
     "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
     "port": int(os.environ.get("MYSQL_PORT", "3306")),
     "user": os.environ.get("MYSQL_USER", "root"),
-    "password": os.environ.get("MYSQL_PASSWORD", ""),  # set in env if needed
+    "password": os.environ.get("MYSQL_PASSWORD", "AmoDodoMyBaby797$"),  # set in env if needed
     # Support either MYSQL_DATABASE or MYSQL_DB
     "database": os.environ.get("MYSQL_DATABASE") or os.environ.get("MYSQL_DB") or "hoopwatch",
 }
@@ -67,45 +67,24 @@ def cache_game(game):
     cursor = connection.cursor()
 
     try:
-
-        game_id = game["gameId"]
-        home_team = game["homeTeam"]["teamId"]
-        away_team = game["awayTeam"]["teamId"]
-
-        # Ensure game exists
-        cursor.execute("""
-        INSERT INTO games (game_id, home_team_id, away_team_id)
-        VALUES (%s, %s, %s)
-        ON DUPLICATE KEY UPDATE home_team_id = home_team_id
-        """, (game_id, home_team, away_team))
-
-        clock = game.get("gameClock") or "0:00"
-
-        # Cache scores
-        cursor.execute("""
-        INSERT INTO game_cache
-        (game_id, home_score, away_score, period, clock, fetched_at)
-        VALUES (%s,%s,%s,%s,%s,NOW())
-        ON DUPLICATE KEY UPDATE
-            home_score=%s,
-            away_score=%s,
-            period=%s,
-            clock=%s,
-            fetched_at=NOW()
-        """, (
-            game_id,
-            game["homeTeam"]["score"],
-            game["awayTeam"]["score"],
-            game["period"],
-            clock,
-            game["homeTeam"]["score"],
-            game["awayTeam"]["score"],
-            game["period"],
-            clock
-        ))
         nba_game_id = str(game.get("gameId"))
-        home_team = int(game["homeTeam"]["teamId"])
-        away_team = int(game["awayTeam"]["teamId"])
+        home_nba_team_id = str(game["homeTeam"]["teamId"])
+        away_nba_team_id = str(game["awayTeam"]["teamId"])
+
+            # Resolve internal team ids from teams.nba_team_id
+        cursor.execute("SELECT team_id FROM teams WHERE nba_team_id = %s", (home_nba_team_id,))
+        home_row = cursor.fetchone()
+
+        cursor.execute("SELECT team_id FROM teams WHERE nba_team_id = %s", (away_nba_team_id,))
+        away_row = cursor.fetchone()
+
+        if not home_row or not away_row:
+            print(f"Cache error: could not map NBA team ids {home_nba_team_id}, {away_nba_team_id} to internal team ids")
+            connection.commit()
+            return
+
+        home_team = int(home_row[0])
+        away_team = int(away_row[0])
 
         # Try to get date from API payload; otherwise fallback to today
         game_date_str = (
@@ -191,9 +170,7 @@ def fetch_team_roster(team_id):
     return data
 
 
-from nba_api.stats.static import teams
-
-def sync_teams():
+    from nba_api.stats.static import teams
 
     nba_teams = teams.get_teams()
 
@@ -211,41 +188,6 @@ def sync_teams():
             team["city"],
             team["abbreviation"]
         ))
-
-def _fetch_conference_map():
-    """Return {nba_team_id:int -> 'East'/'West'} using data.nba.net standings, if available."""
-    conf_map = {}
-    try:
-        import requests
-
-        def _find_teams_list(obj):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if k == "teams" and isinstance(v, list):
-                        return v
-                    found = _find_teams_list(v)
-                    if found is not None:
-                        return found
-            elif isinstance(obj, list):
-                for item in obj:
-                    found = _find_teams_list(item)
-                    if found is not None:
-                        return found
-            return None
-
-        url = "https://data.nba.net/data/10s/prod/v1/current/standings_all.json"
-        resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
-        if resp.status_code == 200:
-            data = resp.json()
-            tlist = _find_teams_list(data) or []
-            for t in tlist:
-                tid = t.get("teamId") or t.get("teamID") or t.get("TEAM_ID")
-                conf = t.get("confName") or t.get("conference")
-                if tid and conf:
-                    conf_map[int(tid)] = "East" if str(conf).lower().startswith("e") else "West"
-    except Exception as e:
-        print("conference map fetch failed:", e)
-    return conf_map
 
 
 def _get_table_columns(connection, table_name):
@@ -272,7 +214,6 @@ def sync_teams():
 
     cols = _get_table_columns(connection, "teams")
     has_auto_team_id = "team_id" in cols and "auto_increment" in str(cols["team_id"]["extra"]).lower()
-    conf_map = _fetch_conference_map()
 
     cursor = connection.cursor()
 
@@ -281,7 +222,7 @@ def sync_teams():
         full_name = team.get("full_name") or team.get("name") or ""
         abbr = team.get("abbreviation") or ""
         city = team.get("city") or ""
-        conf = conf_map.get(nba_id)  # 'East'/'West' or None
+        conf = None
         logo = f"https://cdn.nba.com/logos/nba/{nba_id}/primary/L/logo.svg"
 
         fields = []
@@ -378,44 +319,6 @@ def assets(filename):
 
 # ================= BASKETBALL API =================
 
-@app.route('/api/teams', methods=['GET'])
-def get_teams():
-    sort_by = request.args.get('sort', 'name')
-
-    sort_options = {
-        'name': 't.name',
-        'conference': 't.conference, t.name',
-        'wins': 'COALESCE(ts.wins, 0) DESC, t.name',
-        'losses': 'COALESCE(ts.losses, 0) DESC, t.name'
-    }
-    order_clause = sort_options.get(sort_by, 't.name')
-
-    connection = get_db_connection()
-    if not connection:
-        return jsonify({'error': 'Database connection failed'}), 500
-
-    try:
-        cursor = connection.cursor(dictionary=True)
-        query = f"""
-            SELECT 
-                t.team_id as id,
-                t.name,
-                t.city,
-                t.conference,
-                COALESCE(ts.wins, 0) as wins,
-                COALESCE(ts.losses, 0) as losses
-            FROM teams t
-            LEFT JOIN team_standings ts ON t.team_id = ts.team_id
-            ORDER BY {order_clause}
-        """
-        cursor.execute(query)
-        teams = cursor.fetchall()
-        cursor.close()
-        return jsonify(teams), 200
-    except Error as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        connection.close()
 @app.route('/api/admin/sync-teams')
 def admin_sync():
 
@@ -506,41 +409,6 @@ def get_teams():
 
     # Standings map keyed by NBA team id
     standings_map = {}
-    try:
-        import requests
-
-        def _find_teams_list(obj):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if k == "teams" and isinstance(v, list):
-                        return v
-                    found = _find_teams_list(v)
-                    if found is not None:
-                        return found
-            elif isinstance(obj, list):
-                for item in obj:
-                    found = _find_teams_list(item)
-                    if found is not None:
-                        return found
-            return None
-
-        url = "https://data.nba.net/data/10s/prod/v1/current/standings_all.json"
-        resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
-        if resp.status_code == 200:
-            data = resp.json()
-            tlist = _find_teams_list(data) or []
-            for t in tlist:
-                tid = t.get("teamId") or t.get("teamID") or t.get("TEAM_ID")
-                if not tid:
-                    continue
-                tid = int(tid)
-                wins = int(t.get("win") or t.get("wins") or 0)
-                losses = int(t.get("loss") or t.get("losses") or 0)
-                conf = t.get("confName") or t.get("conference")
-                conf_norm = "East" if str(conf).lower().startswith("e") else ("West" if conf else None)
-                standings_map[tid] = {"wins": wins, "losses": losses, "conference": conf_norm}
-    except Exception as e:
-        print("data.nba.net standings fetch failed:", e)
 
     if not standings_map:
         try:
@@ -630,11 +498,16 @@ def get_team_details(team_id):
             select_parts.append("t.logo_url AS logo_url")
         if "city" in teams_cols:
             select_parts.append("t.city AS city")
+        if "arena_name" in teams_cols:
+            select_parts.append("t.arena_name AS arena_name")
 
         join_sql = ""
-        if "city" not in teams_cols and has_team_locations:
-            select_parts.append("tl.city AS city")
+        if has_team_locations:
             join_sql = " LEFT JOIN team_locations tl ON tl.team_id = t.team_id "
+            if "city" not in teams_cols:
+                select_parts.append("tl.city AS city")
+            if "arena_name" not in teams_cols:
+                select_parts.append("tl.arena_name AS arena_name")
 
         query = f"SELECT {', '.join(select_parts)} FROM teams t{join_sql} WHERE t.team_id = %s"
         cursor = connection.cursor(dictionary=True)
@@ -679,46 +552,14 @@ def get_team_details(team_id):
                 "losses": 0,
                 "conference": row.get("conference"),
                 "logo_url": row.get("logo_url"),
+                "arena": row.get("arena_name"),
             }), 200
 
         # standings
         wins = 0
         losses = 0
         conf_from_standings = None
-
-        try:
-            import requests
-
-            def _find_teams_list(obj):
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        if k == "teams" and isinstance(v, list):
-                            return v
-                        found = _find_teams_list(v)
-                        if found is not None:
-                            return found
-                elif isinstance(obj, list):
-                    for item in obj:
-                        found = _find_teams_list(item)
-                        if found is not None:
-                            return found
-                return None
-
-            url = "https://data.nba.net/data/10s/prod/v1/current/standings_all.json"
-            resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
-            if resp.status_code == 200:
-                data = resp.json()
-                tlist = _find_teams_list(data) or []
-                for t in tlist:
-                    tid = t.get("teamId") or t.get("teamID") or t.get("TEAM_ID")
-                    if tid and int(tid) == int(nba_id):
-                        wins = int(t.get("win") or t.get("wins") or 0)
-                        losses = int(t.get("loss") or t.get("losses") or 0)
-                        conf = t.get("confName") or t.get("conference")
-                        conf_from_standings = "East" if str(conf).lower().startswith("e") else ("West" if conf else None)
-                        break
-        except Exception as e:
-            print("data.nba.net team standings fetch failed:", e)
+    
 
         if wins == 0 and losses == 0:
             try:
@@ -766,6 +607,7 @@ def get_team_details(team_id):
             "losses": losses,
             "conference": row.get("conference") or conf_from_standings,
             "logo_url": logo_url,
+            "arena": row.get("arena_name"),
         }), 200
 
     except Exception as e:
@@ -860,52 +702,8 @@ def get_team_players(team_id):
 
         players = None
 
-        # 1) data.nba.net roster (best)
-        if slug:
-            for year in (season_start, season_end):
-                url = f"https://data.nba.net/data/10s/prod/v1/{year}/teams/{slug}/roster.json"
-                try:
-                    resp = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
-                    if resp.status_code != 200:
-                        continue
-                    data = resp.json()
-                    plist = _find_players_list(data)
-                    if plist:
-                        players = []
-                        for p in plist:
-                            pid = int(p.get("personId") or p.get("playerId") or 0)
-                            first = (p.get("firstName") or "").strip()
-                            last = (p.get("lastName") or "").strip()
-                            name = (p.get("name") or f"{first} {last}").strip()
-                            jersey = str(p.get("jersey") or p.get("jerseyNum") or "-").strip()
-                            pos = (p.get("pos") or p.get("position") or "-").strip() or "-"
 
-                            h_ft = p.get("heightFeet")
-                            h_in = p.get("heightInches")
-                            height = "-"
-                            if h_ft and h_in:
-                                height = f"{h_ft}-{h_in}"
-                            elif p.get("height"):
-                                height = str(p.get("height"))
-
-                            headshot_url = f"https://cdn.nba.com/headshots/nba/latest/260x190/{pid}.png" if pid else ""
-
-                            players.append({
-                                "id": pid,
-                                "name": name,
-                                "jersey": jersey if jersey else "-",
-                                "position": pos,
-                                "height": height,
-                                "headshot_url": headshot_url,
-                            })
-
-                        players.sort(key=lambda x: int(x["jersey"]) if str(x["jersey"]).isdigit() else 999)
-                        break
-                except Exception as e:
-                    print("data.nba.net roster fetch failed:", e)
-                    continue
-
-        # 2) fallback to nba_api stats endpoint (needs NBA team id)
+        # fallback to nba_api stats endpoint (needs NBA team id)
         if players is None:
             if not nba_id:
                 return jsonify({"error": "Could not map to NBA team id for roster fallback"}), 500
@@ -951,6 +749,26 @@ def get_team_players(team_id):
         return jsonify({"error": str(e)}), 500
 
 
+def get_arena_by_nba_team_id(nba_team_id):
+    connection = get_db_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT arena_name
+            FROM teams
+            WHERE nba_team_id = %s
+        """, (str(nba_team_id),))
+        row = cursor.fetchone()
+        cursor.close()
+        return row["arena_name"] if row else None
+    except Exception as e:
+        print("Arena lookup error:", e)
+        return None
+    finally:
+        connection.close()
 
 @app.route('/api/games/live', methods=['GET'])
 def get_live_games():
@@ -963,6 +781,9 @@ def get_live_games():
         
         home = game.get('homeTeam', {})
         away = game.get('awayTeam', {})
+
+        home_team_id = home.get('teamId')
+        arena_name = get_arena_by_nba_team_id(home_team_id)
         
         transformed_game = {
             'game_id': game.get('gameId'),
@@ -970,6 +791,7 @@ def get_live_games():
             'gameStatus': game.get('gameStatus'),
             'status': 'Live' if game.get('gameStatus') == 2 else ('Final' if game.get('gameStatus') == 3 else 'Upcoming'),
             'game_time': game.get('gameStatusText', 'TBD'),
+            'arena_name': arena_name or 'Arena TBD',
             'home_team': {
                 'id': home.get('teamId'),
                 'full_name': f"{home.get('teamCity', '')} {home.get('teamName', '')}".strip(),
@@ -1004,6 +826,26 @@ def get_game_detail(game_id):
         # Extract basic game info
         home_team = game.get('homeTeam', {})
         away_team = game.get('awayTeam', {})
+
+                # Look up arena using the HOME team's NBA team id
+        arena_name = "Arena TBD"
+        try:
+            home_nba_team_id = str(home_team.get('teamId', ''))
+            connection = get_db_connection()
+            if connection:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT arena_name
+                    FROM teams
+                    WHERE nba_team_id = %s
+                """, (home_nba_team_id,))
+                row = cursor.fetchone()
+                if row and row.get("arena_name"):
+                    arena_name = row["arena_name"]
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            print("Arena lookup failed:", e)
         
         # Helper function to convert ISO duration to minutes
         def parse_minutes(iso_duration):
@@ -1053,38 +895,108 @@ def get_game_detail(game_id):
         
         # Process team stats
         def process_team_stats(team_data):
-            stats = team_data.get('statistics', {})
-            return {
-                'points': stats.get('points', 0),
-                'fgm': stats.get('fieldGoalsMade', 0),
-                'fga': stats.get('fieldGoalsAttempted', 0),
-                'fg_pct': stats.get('fieldGoalsPercentage', 0),
-                'fg3m': stats.get('threePointersMade', 0),
-                'fg3a': stats.get('threePointersAttempted', 0),
-                'fg3_pct': stats.get('threePointersPercentage', 0),
-                'ftm': stats.get('freeThrowsMade', 0),
-                'fta': stats.get('freeThrowsAttempted', 0),
-                'ft_pct': stats.get('freeThrowsPercentage', 0),
-                'rebounds': stats.get('reboundsTotal', 0),
-                'offReb': stats.get('reboundsOffensive', 0),
-                'defReb': stats.get('reboundsDefensive', 0),
-                'assists': stats.get('assists', 0),
-                'steals': stats.get('steals', 0),
-                'blocks': stats.get('blocks', 0),
-                'turnovers': stats.get('turnoversTotal', 0),
-                'fouls': stats.get('foulsPersonal', 0),
-                'pointsInPaint': stats.get('pointsInThePaint', 0),
-                'fastBreakPoints': stats.get('pointsFastBreak', 0),
-                'benchPoints': stats.get('benchPoints', 0),
-                'biggestLead': stats.get('biggestLead', 0)
+            stats = team_data.get('statistics', {}) or {}
+            players = team_data.get('players', []) or []
+
+            # Start with team-level stats if present
+            team_stats = {
+                'points': int(stats.get('points') or 0),
+                'fgm': int(stats.get('fieldGoalsMade') or 0),
+                'fga': int(stats.get('fieldGoalsAttempted') or 0),
+                'fg_pct': float(stats.get('fieldGoalsPercentage') or 0),
+                'fg3m': int(stats.get('threePointersMade') or 0),
+                'fg3a': int(stats.get('threePointersAttempted') or 0),
+                'fg3_pct': float(stats.get('threePointersPercentage') or 0),
+                'ftm': int(stats.get('freeThrowsMade') or 0),
+                'fta': int(stats.get('freeThrowsAttempted') or 0),
+                'ft_pct': float(stats.get('freeThrowsPercentage') or 0),
+                'rebounds': int(stats.get('reboundsTotal') or 0),
+                'offReb': int(stats.get('reboundsOffensive') or 0),
+                'defReb': int(stats.get('reboundsDefensive') or 0),
+                'assists': int(stats.get('assists') or 0),
+                'steals': int(stats.get('steals') or 0),
+                'blocks': int(stats.get('blocks') or 0),
+                'turnovers': int(stats.get('turnoversTotal') or stats.get('turnovers') or 0),
+                'fouls': int(stats.get('foulsPersonal') or 0),
+                'pointsInPaint': int(stats.get('pointsInThePaint') or 0),
+                'fastBreakPoints': int(stats.get('pointsFastBreak') or 0),
+                'benchPoints': int(stats.get('benchPoints') or 0),
+                'biggestLead': int(stats.get('biggestLead') or 0)
             }
-        
+
+            # If core stats are zero/incomplete, rebuild them from player stats
+            rebuild_needed = (
+                int(team_data.get('score') or 0) > 0 and (
+                    team_stats['fgm'] == 0 or
+                    team_stats['fga'] == 0 or
+                    team_stats['rebounds'] == 0
+                )
+            )
+
+            if rebuild_needed:
+                rebuilt = {
+                    'points': 0,
+                    'fgm': 0,
+                    'fga': 0,
+                    'fg3m': 0,
+                    'fg3a': 0,
+                    'ftm': 0,
+                    'fta': 0,
+                    'rebounds': 0,
+                    'assists': 0,
+                    'steals': 0,
+                    'blocks': 0,
+                    'turnovers': 0,
+                    'fouls': 0,
+                }
+
+                for player in players:
+                    if player.get('played') != '1':
+                        continue
+
+                    pstats = player.get('statistics', {}) or {}
+
+                    rebuilt['points'] += int(pstats.get('points') or 0)
+                    rebuilt['fgm'] += int(pstats.get('fieldGoalsMade') or 0)
+                    rebuilt['fga'] += int(pstats.get('fieldGoalsAttempted') or 0)
+                    rebuilt['fg3m'] += int(pstats.get('threePointersMade') or 0)
+                    rebuilt['fg3a'] += int(pstats.get('threePointersAttempted') or 0)
+                    rebuilt['ftm'] += int(pstats.get('freeThrowsMade') or 0)
+                    rebuilt['fta'] += int(pstats.get('freeThrowsAttempted') or 0)
+                    rebuilt['rebounds'] += int(pstats.get('reboundsTotal') or 0)
+                    rebuilt['assists'] += int(pstats.get('assists') or 0)
+                    rebuilt['steals'] += int(pstats.get('steals') or 0)
+                    rebuilt['blocks'] += int(pstats.get('blocks') or 0)
+                    rebuilt['turnovers'] += int(pstats.get('turnovers') or 0)
+                    rebuilt['fouls'] += int(pstats.get('foulsPersonal') or 0)
+
+                team_stats['points'] = rebuilt['points']
+                team_stats['fgm'] = rebuilt['fgm']
+                team_stats['fga'] = rebuilt['fga']
+                team_stats['fg3m'] = rebuilt['fg3m']
+                team_stats['fg3a'] = rebuilt['fg3a']
+                team_stats['ftm'] = rebuilt['ftm']
+                team_stats['fta'] = rebuilt['fta']
+                team_stats['rebounds'] = rebuilt['rebounds']
+                team_stats['assists'] = rebuilt['assists']
+                team_stats['steals'] = rebuilt['steals']
+                team_stats['blocks'] = rebuilt['blocks']
+                team_stats['turnovers'] = rebuilt['turnovers']
+                team_stats['fouls'] = rebuilt['fouls']
+
+                team_stats['fg_pct'] = round((rebuilt['fgm'] / rebuilt['fga']) * 100, 1) if rebuilt['fga'] > 0 else 0
+                team_stats['fg3_pct'] = round((rebuilt['fg3m'] / rebuilt['fg3a']) * 100, 1) if rebuilt['fg3a'] > 0 else 0
+                team_stats['ft_pct'] = round((rebuilt['ftm'] / rebuilt['fta']) * 100, 1) if rebuilt['fta'] > 0 else 0
+
+            return team_stats
+
         result = {
             'gameId': game.get('gameId', ''),
             'gameStatus': game.get('gameStatus', 1),
             'gameStatusText': game.get('gameStatusText', ''),
             'period': game.get('period', 0),
             'gameClock': game.get('gameClock', ''),
+            'arena_name': arena_name,
             'homeTeam': {
                 'teamId': home_team.get('teamId', 0),
                 'teamName': home_team.get('teamName', ''),
@@ -1106,11 +1018,12 @@ def get_game_detail(game_id):
                 'statistics': process_team_stats(away_team)
             }
         }
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
 
 @app.route('/api/nba/teams/<int:team_id>/roster')
 def get_roster(team_id):
@@ -1173,40 +1086,29 @@ def get_qotd_comments(question_id):
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute("""
-            SELECT 
+            SELECT
                 c.comment_id,
                 c.question_id,
                 c.user_id,
                 c.parent_comment_id,
                 c.comment_text,
                 c.created_at,
-                u.username AS user_name,
-
-                SUM(CASE WHEN v.vote_value = 1 THEN 1 ELSE 0 END) AS upvotes,
-                SUM(CASE WHEN v.vote_value = -1 THEN 1 ELSE 0 END) AS downvotes
-
-            FROM qotd_comments c
-            JOIN users u ON c.user_id = u.user_id
-            LEFT JOIN qotd_comment_votes v ON c.comment_id = v.comment_id
-
-            WHERE c.question_id = %s
-
-                COALESCE(u.email, CONCAT("User ", u.user_id)) AS user_name,
+                COALESCE(u.email, CONCAT('User ', u.user_id)) AS user_name,
                 SUM(CASE WHEN v.vote_value = 1 THEN 1 ELSE 0 END) AS upvotes,
                 SUM(CASE WHEN v.vote_value = -1 THEN 1 ELSE 0 END) AS downvotes
             FROM qotd_comments c
             JOIN users u ON c.user_id = u.user_id
             LEFT JOIN qotd_comment_votes v ON c.comment_id = v.comment_id
             WHERE c.question_id = %s
-            GROUP BY 
+            GROUP BY
                 c.comment_id,
                 c.question_id,
                 c.user_id,
                 c.parent_comment_id,
                 c.comment_text,
                 c.created_at,
-                u.username
-
+                u.email,
+                u.user_id
             ORDER BY c.created_at ASC
         """, (question_id,))
         comments = cursor.fetchall()

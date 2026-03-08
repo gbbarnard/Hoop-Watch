@@ -166,6 +166,7 @@ async function displayTeamHeader(team) {
     showFallback();
   }
 
+  document.getElementById('team-arena').textContent = team.arena ? `Arena: ${team.arena}` : 'Arena: Arena TBD';
   document.getElementById("team-name").textContent = team.full_name || team.name || "Team";
   document.getElementById("team-record").textContent = `${team.wins ?? 0}W - ${team.losses ?? 0}L`;
 
