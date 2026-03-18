@@ -379,4 +379,4 @@ function createPlayerRow(player) {
 fetchGameDetail();
 
 // Auto-refresh every 10 seconds for live games
-setInterval(fetchGameDetail, 10000);
+setInterval(fetchGameDetail, 50000);

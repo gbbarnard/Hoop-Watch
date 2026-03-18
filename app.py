@@ -6,6 +6,7 @@ Connects to hoopwatch MySQL database and serves team/player data
 import os
 import datetime
 import re
+import time
 from dotenv import load_dotenv
 
 # Load environment variables from a local .env file (if present)
@@ -170,26 +171,6 @@ def fetch_team_roster(team_id):
     return data
 
 
-    from nba_api.stats.static import teams
-
-    nba_teams = teams.get_teams()
-
-    connection = get_db_connection()
-    cursor = connection.cursor()
-
-    for team in nba_teams:
-
-        cursor.execute("""
-        INSERT INTO teams (team_id, name, city, abbreviation)
-        VALUES (%s,%s,%s,%s)
-        """, (
-            team["id"],          # NBA TEAM ID
-            team["full_name"],
-            team["city"],
-            team["abbreviation"]
-        ))
-
-
 def _get_table_columns(connection, table_name):
     cur = connection.cursor()
     cur.execute(f"SHOW COLUMNS FROM {table_name}")
@@ -198,14 +179,25 @@ def _get_table_columns(connection, table_name):
     # SHOW COLUMNS columns: Field, Type, Null, Key, Default, Extra
     return {c[0]: {"type": c[1], "null": c[2], "key": c[3], "default": c[4], "extra": c[5]} for c in cols}
 
+def _parse_height_to_inches(height_str):
+    """
+    Convert heights like '6-8' to total inches.
+    Returns None if parsing fails.
+    """
+    if not height_str:
+        return None
+
+    try:
+        s = str(height_str).strip()
+        if "-" in s:
+            ft, inch = s.split("-")
+            return int(ft) * 12 + int(inch)
+    except Exception:
+        pass
+
+    return None
 
 def sync_teams():
-    """Insert/refresh NBA teams into the local MySQL teams table.
-
-    IMPORTANT: In our schema, teams.team_id is an internal AUTO_INCREMENT id.
-    The NBA id should be stored in teams.nba_team_id (if that column exists).
-    If the schema instead uses team_id as the NBA id (no auto_increment), we support that too.
-    """
     nba_teams = teams.get_teams()
 
     connection = get_db_connection()
@@ -213,16 +205,59 @@ def sync_teams():
         return
 
     cols = _get_table_columns(connection, "teams")
-    has_auto_team_id = "team_id" in cols and "auto_increment" in str(cols["team_id"]["extra"]).lower()
+    has_auto_team_id = (
+        "team_id" in cols and
+        "auto_increment" in str(cols["team_id"]["extra"]).lower()
+    )
 
     cursor = connection.cursor()
+
+    east_teams = {
+        "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DET",
+        "IND", "MIA", "MIL", "NYK", "ORL", "PHI", "TOR", "WAS"
+    }
+
+    arena_map = {
+        "ATL": "State Farm Arena",
+        "BOS": "TD Garden",
+        "BKN": "Barclays Center",
+        "CHA": "Spectrum Center",
+        "CHI": "United Center",
+        "CLE": "Rocket Mortgage FieldHouse",
+        "DAL": "American Airlines Center",
+        "DEN": "Ball Arena",
+        "DET": "Little Caesars Arena",
+        "GSW": "Chase Center",
+        "HOU": "Toyota Center",
+        "IND": "Gainbridge Fieldhouse",
+        "LAC": "Intuit Dome",
+        "LAL": "Crypto.com Arena",
+        "MEM": "FedExForum",
+        "MIA": "Kaseya Center",
+        "MIL": "Fiserv Forum",
+        "MIN": "Target Center",
+        "NOP": "Smoothie King Center",
+        "NYK": "Madison Square Garden",
+        "OKC": "Paycom Center",
+        "ORL": "Kia Center",
+        "PHI": "Wells Fargo Center",
+        "PHX": "Footprint Center",
+        "POR": "Moda Center",
+        "SAC": "Golden 1 Center",
+        "SAS": "Frost Bank Center",
+        "TOR": "Scotiabank Arena",
+        "UTA": "Delta Center",
+        "WAS": "Capital One Arena",
+    }
 
     for team in nba_teams:
         nba_id = int(team["id"])
         full_name = team.get("full_name") or team.get("name") or ""
         abbr = team.get("abbreviation") or ""
         city = team.get("city") or ""
-        conf = None
+        state = team.get("state") or ""
+        conf = "East" if abbr in east_teams else "West"
+        arena = arena_map.get(abbr, "")
         logo = f"https://cdn.nba.com/logos/nba/{nba_id}/primary/L/logo.svg"
 
         fields = []
@@ -235,22 +270,17 @@ def sync_teams():
                 values.append(value)
                 updates.append(f"{field}=VALUES({field})")
 
-        # If team_id is NOT auto_increment, it's probably meant to be the NBA id
         if "team_id" in cols and not has_auto_team_id:
             add("team_id", nba_id)
 
-        # Preferred: store NBA id in nba_team_id
         add("nba_team_id", str(nba_id))
-
-        # Common columns
         add("name", full_name)
         add("abbreviation", abbr)
         add("city", city)
+        add("state", state)
+        add("conference", conf)
+        add("arena_name", arena)
         add("logo_url", logo)
-
-        # conference is often NOT NULL in schema, so ensure a value if column exists
-        if "conference" in cols:
-            add("conference", conf or "East")
 
         if not fields:
             continue
@@ -269,41 +299,226 @@ def sync_teams():
 
 
 def sync_standings():
-
-
     standings = leaguestandings.LeagueStandings()
     data = standings.get_dict()
 
+    headers = data["resultSets"][0]["headers"]
     rows = data["resultSets"][0]["rowSet"]
 
+    def idx(col_name):
+        return headers.index(col_name) if col_name in headers else None
+
+    team_id_idx = idx("TeamID") if idx("TeamID") is not None else idx("TEAM_ID")
+    wins_idx = idx("WINS") if idx("WINS") is not None else idx("W")
+    losses_idx = idx("LOSSES") if idx("LOSSES") is not None else idx("L")
+
     connection = get_db_connection()
+    if not connection:
+        print("Database connection failed")
+        return
+
     cursor = connection.cursor()
 
     for team in rows:
+        nba_team_id = str(team[team_id_idx])
 
-        team_id = team[2]
+        wins = int(team[wins_idx]) if str(team[wins_idx]).isdigit() else 0
+        losses = int(team[losses_idx]) if str(team[losses_idx]).isdigit() else 0
 
-        wins = int(team[8]) if str(team[8]).isdigit() else 0
-        losses = int(team[9]) if str(team[9]).isdigit() else 0
-
-        # check team exists first
-        cursor.execute("SELECT team_id FROM teams WHERE team_id=%s", (team_id,))
+        # Find internal DB team_id using nba_team_id
+        cursor.execute("SELECT team_id FROM teams WHERE nba_team_id=%s", (nba_team_id,))
         exists = cursor.fetchone()
 
         if not exists:
+            print(f"Skipping NBA team {nba_team_id}: not found in teams table")
             continue
 
+        internal_team_id = exists[0]
+
         cursor.execute("""
-        INSERT INTO team_standings (team_id, wins, losses)
-        VALUES (%s,%s,%s)
-        ON DUPLICATE KEY UPDATE
-            wins=%s,
-            losses=%s
-        """, (team_id, wins, losses, wins, losses))
+            INSERT INTO team_standings (team_id, wins, losses)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                wins = VALUES(wins),
+                losses = VALUES(losses)
+        """, (internal_team_id, wins, losses))
 
     connection.commit()
     cursor.close()
     connection.close()
+
+def sync_players():
+    """
+    Fetch all team rosters from nba_api and store/update them in the players table.
+
+    Assumes:
+    - teams.team_id = internal DB team id
+    - teams.nba_team_id = NBA team id
+    - players.nba_player_id is UNIQUE
+    """
+    connection = get_db_connection()
+    if not connection:
+        print("Player sync failed: database connection failed")
+        return
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        # Get all teams that can be mapped to NBA teams
+        cursor.execute("""
+            SELECT team_id, nba_team_id, abbreviation
+            FROM teams
+            WHERE nba_team_id IS NOT NULL
+            ORDER BY team_id
+        """)
+        teams_rows = cursor.fetchall()
+
+        if not teams_rows:
+            print("Player sync: no teams found with nba_team_id")
+            cursor.close()
+            connection.close()
+            return
+
+        for team in teams_rows:
+            internal_team_id = team["team_id"]
+            nba_team_id = str(team["nba_team_id"]).strip()
+
+            if not nba_team_id:
+                continue
+
+            try:
+                today = datetime.date.today()
+                season_start = today.year if today.month >= 10 else today.year - 1
+                season_end = season_start + 1
+                season_str = f"{season_start}-{str(season_end)[-2:]}"
+
+                roster = commonteamroster.CommonTeamRoster(
+                    team_id=nba_team_id,
+                    season=season_str,
+                    timeout=10
+                )
+                data = roster.get_dict()
+
+                if not data.get("resultSets"):
+                    print(f"No resultSets returned for team {nba_team_id}")
+                    time.sleep(0.6)
+                    continue
+
+                rs = data["resultSets"][0]
+                headers = rs["headers"]
+                rows = rs["rowSet"]
+
+                def idx(col):
+                    return headers.index(col) if col in headers else None
+
+                i_player_id = idx("PLAYER_ID")
+                i_player = idx("PLAYER")
+                i_num = idx("NUM")
+                i_pos = idx("POSITION")
+                i_height = idx("HEIGHT")
+                i_weight = idx("WEIGHT")
+                i_birth = idx("BIRTH_DATE")
+
+                for row in rows:
+                    nba_player_id = str(row[i_player_id]).strip() if i_player_id is not None and row[i_player_id] else None
+                    full_name = str(row[i_player]).strip() if i_player is not None and row[i_player] else ""
+                    jersey = row[i_num] if i_num is not None else None
+                    position = row[i_pos] if i_pos is not None else None
+                    height_str = row[i_height] if i_height is not None else None
+                    weight_lb = row[i_weight] if i_weight is not None else None
+                    birth_date = row[i_birth] if i_birth is not None else None
+
+                    if not full_name:
+                        continue
+
+                    parts = full_name.split()
+                    first_name = parts[0]
+                    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+                    height_in = _parse_height_to_inches(height_str)
+
+                    try:
+                        weight_lb = int(weight_lb) if weight_lb not in (None, "", " ") else None
+                    except Exception:
+                        weight_lb = None
+
+                    # Try to normalize birth date if nba_api returns a string
+                    # If parsing fails, store NULL
+                    birth_date_sql = None
+                    if birth_date:
+                        try:
+                            if isinstance(birth_date, datetime.date):
+                                birth_date_sql = birth_date
+                            else:
+                                s = str(birth_date).strip()
+                                # common case: '1998-03-03T00:00:00'
+                                m = re.search(r"(\d{4}-\d{2}-\d{2})", s)
+                                if m:
+                                    birth_date_sql = m.group(1)
+                        except Exception:
+                            birth_date_sql = None
+
+                    headshot_url = (
+                        f"https://cdn.nba.com/headshots/nba/latest/260x190/{nba_player_id}.png"
+                        if nba_player_id else None
+                    )
+
+                    cursor.execute("""
+                        INSERT INTO players
+                        (
+                            nba_player_id,
+                            team_id,
+                            first_name,
+                            last_name,
+                            position,
+                            jersey_number,
+                            height_in,
+                            weight_lb,
+                            birth_date,
+                            headshot_url,
+                            is_active
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                        ON DUPLICATE KEY UPDATE
+                            team_id = VALUES(team_id),
+                            first_name = VALUES(first_name),
+                            last_name = VALUES(last_name),
+                            position = VALUES(position),
+                            jersey_number = VALUES(jersey_number),
+                            height_in = VALUES(height_in),
+                            weight_lb = VALUES(weight_lb),
+                            birth_date = VALUES(birth_date),
+                            headshot_url = VALUES(headshot_url),
+                            is_active = TRUE
+                    """, (
+                        nba_player_id,
+                        internal_team_id,
+                        first_name,
+                        last_name,
+                        position if position else None,
+                        int(jersey) if str(jersey).isdigit() else None,
+                        height_in,
+                        weight_lb,
+                        birth_date_sql,
+                        headshot_url
+                    ))
+
+                connection.commit()
+                print(f"Synced players for team {team['abbreviation']} ({nba_team_id})")
+
+            except Exception as e:
+                print(f"Failed to sync players for team {team['abbreviation']} ({nba_team_id}): {e}")
+
+            # small delay to reduce throttling
+            time.sleep(0.6)
+
+        cursor.close()
+
+    except Exception as e:
+        print("Player sync failed:", e)
+
+    finally:
+        connection.close()
 # ================= STATIC ROUTES =================
 
 @app.route('/database/Logos/<path:filename>')
@@ -325,6 +540,20 @@ def admin_sync():
     sync_teams()
 
     return {"message":"teams synced"}
+    
+@app.route('/api/admin/sync-standings')
+def admin_sync_standings():
+    
+    sync_standings()
+
+    return {"message": "standings synced"}
+
+@app.route('/api/admin/sync-players')
+def admin_sync_players():
+
+    sync_players()
+
+    return {"message": "players synced"}
 
 @app.route('/api/teams', methods=['GET'])
 def get_teams():
@@ -407,61 +636,49 @@ def get_teams():
             return name_map[nm]
         return None
 
-    # Standings map keyed by NBA team id
-    standings_map = {}
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({"error": "Database connection failed"}), 500
 
-    if not standings_map:
-        try:
-            standings = leaguestandings.LeagueStandings().get_dict()
-            headers = standings["resultSets"][0]["headers"]
-            rows = standings["resultSets"][0]["rowSet"]
+    try:
+        cursor = connection.cursor(dictionary=True)
 
-            def hidx(*candidates):
-                for c in candidates:
-                    if c in headers:
-                        return headers.index(c)
-                return None
+        sort_by = request.args.get('sort', 'name')
+        sort_options = {
+            'name': 't.name',
+            'conference': 't.conference, t.name',
+            'wins': 'COALESCE(ts.wins, 0) DESC, t.name',
+            'losses': 'COALESCE(ts.losses, 0) DESC, t.name'
+        }
+        order_clause = sort_options.get(sort_by, 't.name')
 
-            team_id_idx = hidx("TeamID", "TEAM_ID")
-            wins_idx = hidx("WINS", "W")
-            losses_idx = hidx("LOSSES", "L")
-            conf_idx = hidx("Conference", "CONFERENCE")
+        query = f"""
+            SELECT
+                t.team_id AS id,
+                t.nba_team_id,
+                t.name,
+                t.city,
+                t.abbreviation,
+                t.conference,
+                t.logo_url,
+                COALESCE(ts.wins, 0) AS wins,
+                COALESCE(ts.losses, 0) AS losses
+            FROM teams t
+            LEFT JOIN team_standings ts ON t.team_id = ts.team_id
+            ORDER BY {order_clause}
+        """
 
-            for row in rows:
-                tid = int(row[team_id_idx]) if team_id_idx is not None else None
-                if tid is None:
-                    continue
-                conf = row[conf_idx] if conf_idx is not None else None
-                conf_norm = "East" if str(conf).lower().startswith("e") else ("West" if conf else None)
-                standings_map[tid] = {
-                    "wins": int(row[wins_idx]) if wins_idx is not None else 0,
-                    "losses": int(row[losses_idx]) if losses_idx is not None else 0,
-                    "conference": conf_norm,
-                }
-        except Exception as e:
-            print("nba_api standings fetch failed:", e)
+        cursor.execute(query)
+        teams_out = cursor.fetchall()
+        cursor.close()
 
-    teams_out = []
-    for t in db_teams:
-        internal_id = int(t["team_id"])
-        nba_id = nba_id_for_row(t)
+        return jsonify(teams_out), 200
 
-        record = standings_map.get(nba_id, {"wins": 0, "losses": 0, "conference": None})
-        logo = t.get("logo_url") or (f"https://cdn.nba.com/logos/nba/{nba_id}/primary/L/logo.svg" if nba_id else "")
+    except Error as e:
+        return jsonify({"error": str(e)}), 500
 
-        teams_out.append({
-            "id": internal_id,
-            "nba_team_id": nba_id,
-            "name": t.get("name"),
-            "city": t.get("city"),
-            "abbreviation": t.get("abbreviation"),
-            "wins": record["wins"],
-            "losses": record["losses"],
-            "conference": t.get("conference") or record["conference"],
-            "logo_url": logo,
-        })
-
-    return jsonify(teams_out)
+    finally:
+        connection.close()
 
 
 @app.route('/api/teams/<int:team_id>', methods=['GET'])
@@ -618,72 +835,49 @@ def get_team_details(team_id):
 
 @app.route('/api/teams/<int:team_id>/players', methods=['GET'])
 def get_team_players(team_id):
-    """Return a team's roster with headshot URLs.
 
-    `team_id` is the INTERNAL DB id. We map it to the NBA team id using teams.nba_team_id or abbreviation.
-    Primary source: data.nba.net roster (usually most reliable).
-    Fallback: nba_api CommonTeamRoster (requires NBA team id).
-    """
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({"error": "Database connection failed"}), 500
+
     try:
-        import requests
-        today = datetime.date.today()
-        season_start = today.year if today.month >= 10 else today.year - 1
-        season_end = season_start + 1
+        cursor = connection.cursor(dictionary=True)
 
-        # Map team abbreviations to data.nba.net team slugs
-        abbr_to_slug = {
-            "ATL": "hawks", "BOS": "celtics", "BKN": "nets", "CHA": "hornets", "CHI": "bulls",
-            "CLE": "cavaliers", "DAL": "mavericks", "DEN": "nuggets", "DET": "pistons",
-            "GSW": "warriors", "HOU": "rockets", "IND": "pacers", "LAC": "clippers", "LAL": "lakers",
-            "MEM": "grizzlies", "MIA": "heat", "MIL": "bucks", "MIN": "timberwolves", "NOP": "pelicans",
-            "NYK": "knicks", "OKC": "thunder", "ORL": "magic", "PHI": "sixers", "PHX": "suns",
-            "POR": "blazers", "SAC": "kings", "SAS": "spurs", "TOR": "raptors", "UTA": "jazz", "WAS": "wizards",
-        }
+        cursor.execute("""
+            SELECT
+                player_id AS id,
+                nba_player_id,
+                CONCAT(first_name, ' ', last_name) AS name,
+                jersey_number AS jersey,
+                position,
+                CASE
+                    WHEN height_in IS NOT NULL THEN CONCAT(FLOOR(height_in / 12), '-', MOD(height_in, 12))
+                    ELSE NULL
+                END AS height,
+                CASE
+                    WHEN headshot_url IS NOT NULL AND headshot_url <> '' THEN headshot_url
+                    WHEN nba_player_id IS NOT NULL AND nba_player_id <> '' THEN CONCAT('https://cdn.nba.com/headshots/nba/latest/260x190/', nba_player_id, '.png')
+                    ELSE NULL
+                END AS headshot_url
+            FROM players
+            WHERE team_id = %s
+            ORDER BY
+                CASE
+                    WHEN jersey_number IS NULL THEN 999
+                    ELSE jersey_number
+                END,
+                last_name,
+                first_name
+        """, (team_id,))
 
-        # Get abbreviation + nba_team_id from DB if possible
-        abbr = None
-        nba_id = None
-        try:
-            conn = get_db_connection()
-            if conn:
-                cur = conn.cursor()
-                # try both schema styles
-                cur.execute("SHOW COLUMNS FROM teams")
-                cols = [c[0] for c in cur.fetchall()]
-                if "nba_team_id" in cols:
-                    cur.execute("SELECT abbreviation, nba_team_id FROM teams WHERE team_id=%s", (team_id,))
-                    row = cur.fetchone()
-                    if not row:
-                        # If the user passed an NBA team id, resolve it to our row.
-                        cur.execute("SELECT abbreviation, nba_team_id FROM teams WHERE nba_team_id=%s", (team_id,))
-                        row = cur.fetchone()
-                    if row:
-                        abbr = row[0]
-                        raw = row[1]
-                        if raw is not None and str(raw).strip().isdigit():
-                            nba_id = int(str(raw).strip())
-                else:
-                    cur.execute("SELECT abbreviation FROM teams WHERE team_id=%s", (team_id,))
-                    row = cur.fetchone()
-                    if row:
-                        abbr = row[0]
-                cur.close()
-                conn.close()
-        except Exception:
-            pass
+        players = cursor.fetchall()
+        cursor.close()
+        connection.close()
 
-        # If we still don't have nba_id, map by abbreviation using nba_api static teams
-        if nba_id is None:
-            nba_list = teams.get_teams()
-            abbr_map = {str(t.get("abbreviation", "")).upper(): int(t["id"]) for t in nba_list if t.get("abbreviation")}
-            if abbr:
-                nba_id = abbr_map.get(str(abbr).upper())
+        return jsonify(players), 200
 
-        if not abbr:
-            # last resort: try to map internal id to NBA id by looking at team details route
-            return jsonify({"error": "Team abbreviation not found"}), 404
-
-        slug = abbr_to_slug.get(str(abbr).upper())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
         def _find_players_list(obj):
             if isinstance(obj, dict):
@@ -773,17 +967,34 @@ def get_arena_by_nba_team_id(nba_team_id):
 @app.route('/api/games/live', methods=['GET'])
 def get_live_games():
     games = fetch_live_games()
-    
+
     # Transform the data for frontend
     transformed_games = []
     for game in games:
         cache_game(game)
-        
+
         home = game.get('homeTeam', {})
         away = game.get('awayTeam', {})
 
-        home_team_id = home.get('teamId')
-        arena_name = get_arena_by_nba_team_id(home_team_id)
+        home_nba_team_id = str(home.get('teamId'))
+        away_nba_team_id = str(away.get('teamId'))
+
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT team_id FROM teams WHERE nba_team_id = %s", (home_nba_team_id,))
+        home_row = cursor.fetchone()
+
+        cursor.execute("SELECT team_id FROM teams WHERE nba_team_id = %s", (away_nba_team_id,))
+        away_row = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        home_internal_id = home_row["team_id"] if home_row else None
+        away_internal_id = away_row["team_id"] if away_row else None
+
+        arena_name = get_arena_by_nba_team_id(home_nba_team_id)
         
         transformed_game = {
             'game_id': game.get('gameId'),
@@ -793,14 +1004,16 @@ def get_live_games():
             'game_time': game.get('gameStatusText', 'TBD'),
             'arena_name': arena_name or 'Arena TBD',
             'home_team': {
-                'id': home.get('teamId'),
+                'id': home_internal_id or home.get('teamId'),
+                'nba_team_id': home.get('teamId'),
                 'full_name': f"{home.get('teamCity', '')} {home.get('teamName', '')}".strip(),
                 'abbreviation': home.get('teamTricode', ''),
                 'wins': home.get('wins', 0),
                 'losses': home.get('losses', 0)
             },
             'away_team': {
-                'id': away.get('teamId'),
+                'id': away_internal_id or away.get('teamId'),
+                'nba_team_id': away.get('teamId'),
                 'full_name': f"{away.get('teamCity', '')} {away.get('teamName', '')}".strip(),
                 'abbreviation': away.get('teamTricode', ''),
                 'wins': away.get('wins', 0),
@@ -812,6 +1025,7 @@ def get_live_games():
         transformed_games.append(transformed_game)
     
     return jsonify(transformed_games)
+    
 @app.route('/api/games/<game_id>', methods=['GET'])
 def get_game_detail(game_id):
     """Get detailed game information including box score"""
@@ -1024,14 +1238,6 @@ def get_game_detail(game_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-
-@app.route('/api/nba/teams/<int:team_id>/roster')
-def get_roster(team_id):
-
-    roster = fetch_team_roster(team_id)
-
-    return jsonify(roster)
-
 
 # ================= QOTD API =================
 

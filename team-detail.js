@@ -89,8 +89,6 @@ async function fetchTeamData() {
   }
 }
 
-
-
 async function loadFirstWorkingImage(urls) {
   for (const url of urls) {
     if (!url) continue;
