@@ -49,9 +49,190 @@ function parseGameClock(clock) {
 // Get game ID from URL
 const urlParams = new URLSearchParams(window.location.search);
 const gameId = urlParams.get('id');
+const COMMENTS_KEY = `hoopwatch.gameComments.${gameId}`;
+const ALERTS_KEY = 'hoopwatch.gameAlerts';
+
+let currentGameData = null;
 
 if (!gameId) {
     window.location.href = 'index.html';
+}
+
+function readJsonStorage(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallback;
+        const parsed = JSON.parse(raw);
+        return parsed ?? fallback;
+    } catch (error) {
+        console.error(`Storage read error for ${key}:`, error);
+        return fallback;
+    }
+}
+
+function writeJsonStorage(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function formatTimestamp(iso) {
+    try {
+        return new Date(iso).toLocaleString();
+    } catch {
+        return iso;
+    }
+}
+
+function getGameLabel() {
+    if (!currentGameData) return `Game ${gameId}`;
+    const away = `${currentGameData.awayTeam.teamCity} ${currentGameData.awayTeam.teamName}`.trim();
+    const home = `${currentGameData.homeTeam.teamCity} ${currentGameData.homeTeam.teamName}`.trim();
+    return `${away} at ${home}`;
+}
+
+function getComments() {
+    const comments = readJsonStorage(COMMENTS_KEY, []);
+    return Array.isArray(comments) ? comments : [];
+}
+
+function saveComments(comments) {
+    writeJsonStorage(COMMENTS_KEY, comments);
+}
+
+function renderComments() {
+    const list = document.getElementById('gameCommentsList');
+    if (!list) return;
+
+    const comments = getComments();
+    if (!comments.length) {
+        list.innerHTML = '<p class="muted">No comments yet.</p>';
+        return;
+    }
+
+    list.innerHTML = comments.map((item) => `
+        <article class="stack-item">
+            <div class="stack-item-title">${escapeHtml(item.author || 'Anonymous')}</div>
+            <div class="stack-item-meta">${escapeHtml(formatTimestamp(item.createdAt))}</div>
+            <p class="stack-item-body">${escapeHtml(item.text)}</p>
+        </article>
+    `).join('');
+}
+
+function postComment() {
+    const authorInput = document.getElementById('commentAuthor');
+    const textInput = document.getElementById('commentText');
+    if (!textInput) return;
+
+    const text = (textInput.value || '').trim();
+    const author = (authorInput && authorInput.value ? authorInput.value : 'Anonymous').trim() || 'Anonymous';
+    if (!text) {
+        alert('Please enter a comment.');
+        return;
+    }
+
+    const comments = getComments();
+    comments.unshift({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        author,
+        text,
+        createdAt: new Date().toISOString()
+    });
+    saveComments(comments);
+    textInput.value = '';
+    renderComments();
+}
+
+function getAllAlerts() {
+    const alerts = readJsonStorage(ALERTS_KEY, []);
+    return Array.isArray(alerts) ? alerts : [];
+}
+
+function saveAllAlerts(alerts) {
+    writeJsonStorage(ALERTS_KEY, alerts);
+}
+
+function getCurrentGameAlerts() {
+    return getAllAlerts().filter((a) => String(a.gameId) === String(gameId));
+}
+
+function removeAlert(alertId) {
+    const all = getAllAlerts();
+    const next = all.filter((a) => a.id !== alertId);
+    saveAllAlerts(next);
+    renderAlerts();
+}
+
+function renderAlerts() {
+    const list = document.getElementById('alertsList');
+    if (!list) return;
+
+    const alerts = getCurrentGameAlerts();
+    if (!alerts.length) {
+        list.innerHTML = '<p class="muted">No alerts set for this game.</p>';
+        return;
+    }
+
+    list.innerHTML = alerts.map((alertRule) => `
+        <article class="stack-item">
+            <div class="stack-item-row">
+                <div>
+                    <div class="stack-item-title">${escapeHtml(getGameLabel())}</div>
+                    <div class="stack-item-meta">Reminder: ${Number(alertRule.leadMinutes)} min before</div>
+                </div>
+                <button type="button" class="button danger-button remove-alert-btn" data-alert-id="${escapeHtml(alertRule.id)}">Remove</button>
+            </div>
+        </article>
+    `).join('');
+
+    list.querySelectorAll('.remove-alert-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            removeAlert(btn.getAttribute('data-alert-id'));
+        });
+    });
+}
+
+function addAlert() {
+    const leadSelect = document.getElementById('alertLeadMinutes');
+    const leadMinutes = Number(leadSelect ? leadSelect.value : 10);
+
+    const all = getAllAlerts();
+    const duplicate = all.find((a) => String(a.gameId) === String(gameId) && Number(a.leadMinutes) === leadMinutes);
+    if (duplicate) {
+        alert('That alert already exists for this game.');
+        return;
+    }
+
+    all.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        gameId: String(gameId),
+        leadMinutes,
+        createdAt: new Date().toISOString()
+    });
+    saveAllAlerts(all);
+    renderAlerts();
+}
+
+function initInteractionHandlers() {
+    const postBtn = document.getElementById('postCommentBtn');
+    if (postBtn) {
+        postBtn.addEventListener('click', postComment);
+    }
+
+    const addAlertBtn = document.getElementById('addAlertBtn');
+    if (addAlertBtn) {
+        addAlertBtn.addEventListener('click', addAlert);
+    }
+
+    renderComments();
+    renderAlerts();
 }
 
 async function fetchGameDetail() {
@@ -76,6 +257,7 @@ async function fetchGameDetail() {
 
 function displayGameDetail(game) {
     const { homeTeam, awayTeam, gameStatus, gameStatusText, period, gameClock } = game;
+    currentGameData = game;
     
     // Set team logos
     document.getElementById('away-logo').src = teamLogos[awayTeam.teamTricode] || '';
@@ -110,6 +292,9 @@ function displayGameDetail(game) {
     // Display box scores
     displayBoxScore('away', awayTeam);
     displayBoxScore('home', homeTeam);
+
+    // Keep alerts text up to date with current matchup names.
+    renderAlerts();
 }
 
 function displayQuarterScores(homePeriods, awayPeriods) {
@@ -282,6 +467,7 @@ function createPlayerRow(player) {
 
 // Initial fetch
 fetchGameDetail();
+initInteractionHandlers();
 
 // Auto-refresh every 10 seconds for live games
 setInterval(fetchGameDetail, 10000);

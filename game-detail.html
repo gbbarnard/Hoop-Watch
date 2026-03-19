@@ -50,6 +50,16 @@
                 <div id="team-stats" class="team-stats-grid"></div>
             </div>
 
+            <section class="interaction-card comments-under-stats">
+                <h3>Game Comments</h3>
+                <div class="comment-form">
+                    <input id="commentAuthor" class="search-input" placeholder="Name (optional)" />
+                    <textarea id="commentText" class="search-input" placeholder="Leave a comment about this game..." rows="3"></textarea>
+                    <button id="postCommentBtn" class="button" style="margin-bottom:0;">Post Comment</button>
+                </div>
+                <div id="gameCommentsList" class="stack-list"></div>
+            </section>
+
             <div class="box-score-section">
                 <h3 id="away-team-boxscore-title">Box Score</h3>
                 <div class="table-container">
@@ -62,6 +72,7 @@
                 </div>
             </div>
         </div>
+
     </main>
 
     <script src="game-detail.js"></script>

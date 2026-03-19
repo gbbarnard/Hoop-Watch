@@ -1,4 +1,5 @@
 const API_URL = 'http://localhost:8000';
+const ALERTS_KEY = 'hoopwatch.gameAlerts';
 
 // NBA team logo URLs from official sources
 const teamLogos = {
@@ -54,6 +55,81 @@ async function fetchGames() {
     }
 }
 
+function readJsonStorage(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallback;
+        const parsed = JSON.parse(raw);
+        return parsed ?? fallback;
+    } catch (error) {
+        console.error(`Storage read error for ${key}:`, error);
+        return fallback;
+    }
+}
+
+function writeJsonStorage(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+}
+
+function showToast(message) {
+    const existing = document.querySelector('.toast-message');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.remove();
+    }, 2200);
+}
+
+function getAllAlerts() {
+    const alerts = readJsonStorage(ALERTS_KEY, []);
+    return Array.isArray(alerts) ? alerts : [];
+}
+
+function hasGameAlert(gameId) {
+    return getAllAlerts().some((a) => String(a.gameId) === String(gameId));
+}
+
+function toggleGameAlert(event, gameId) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    const all = getAllAlerts();
+    const exists = all.some((a) => String(a.gameId) === String(gameId));
+    const next = exists
+        ? all.filter((a) => String(a.gameId) !== String(gameId))
+        : [
+            ...all,
+            {
+                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                gameId: String(gameId),
+                leadMinutes: 10,
+                createdAt: new Date().toISOString()
+            }
+        ];
+
+    writeJsonStorage(ALERTS_KEY, next);
+
+    // Update the clicked bell immediately so it feels like the team star toggle.
+    const btn = event?.currentTarget;
+    const nextActive = !exists;
+    if (btn && typeof btn.classList !== 'undefined') {
+        btn.classList.toggle('active', nextActive);
+        btn.setAttribute('aria-pressed', nextActive ? 'true' : 'false');
+        const nextTitle = nextActive ? 'Remove game alert' : 'Set game alert';
+        btn.setAttribute('title', nextTitle);
+        btn.setAttribute('aria-label', nextTitle);
+    }
+
+    showToast(nextActive ? 'Alerts added' : 'Alerts removed');
+}
+
 function createGameCard(game) {
     const homeTeam = game.home_team || {};
     const awayTeam = game.away_team || {};
@@ -80,9 +156,17 @@ function createGameCard(game) {
     
     // Get game ID for navigation to game detail page
     const gameId = game.gameId || game.game_id || game.id || '';
+    const alertActive = hasGameAlert(gameId);
+    const alertTitle = alertActive ? 'Remove game alert' : 'Set game alert';
     
     return `
         <div class="game-card" onclick="window.location.href='game-detail.html?id=${gameId}'" style="cursor: pointer;">
+            <button class="game-alert-btn ${alertActive ? 'active' : ''}" onclick="toggleGameAlert(event, '${gameId}');" title="${alertTitle}" aria-label="${alertTitle}" aria-pressed="${alertActive ? 'true' : 'false'}">
+                <svg class="game-alert-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 3a5 5 0 0 0-5 5v3.1c0 .95-.34 1.87-.95 2.6L4.8 15.2a1 1 0 0 0 .77 1.64h12.86a1 1 0 0 0 .77-1.64l-1.25-1.5a4 4 0 0 1-.95-2.6V8a5 5 0 0 0-5-5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9.5 18.2a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
             <span class="game-status ${statusClass}">${statusText}</span>
             <div class="game-time">${gameTime}</div>
             <div class="game-teams">
@@ -125,3 +209,5 @@ fetchGames();
 
 // Auto refresh every 30 seconds
 setInterval(fetchGames, 30000);
+
+window.toggleGameAlert = toggleGameAlert;
