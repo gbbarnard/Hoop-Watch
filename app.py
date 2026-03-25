@@ -1258,15 +1258,33 @@ def get_team_details(team_id):
                 "arena": row.get("arena_name"),
             }), 200
 
-        # standings
+        # standings: first read the saved DB standings row that sync_standings() updates.
+        # Only fall back to nba_api if the table has no row for this team.
         wins = 0
         losses = 0
         conf_from_standings = None
-    
+
+        try:
+            connection = get_db_connection()
+            if connection:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute(
+                    "SELECT wins, losses FROM team_standings WHERE team_id = %s",
+                    (int(row["team_id"]),)
+                )
+                standings_row = cursor.fetchone()
+                cursor.close()
+                connection.close()
+
+                if standings_row:
+                    wins = int(standings_row.get("wins") or 0)
+                    losses = int(standings_row.get("losses") or 0)
+        except Exception as e:
+            print("DB standings lookup failed:", e)
 
         if wins == 0 and losses == 0:
             try:
-                standings = leaguestandings.LeagueStandings().get_dict()
+                standings = leaguestandings.LeagueStandings(headers=NBA_HEADERS, timeout=20).get_dict()
                 headers = standings["resultSets"][0]["headers"]
                 rows = standings["resultSets"][0]["rowSet"]
 
