@@ -12,35 +12,8 @@ INSERT INTO users (email, password_hash, role) VALUES
 -- TEAMS (30 sample NBA teams)
 INSERT INTO teams (nba_team_id, name, abbreviation, conference, logo_url, city, state, country, arena_name) VALUES
 ('1610612737','Atlanta Hawks','ATL','East','/static/Logos/Atlanta_Hawks.png','Atlanta','GA','USA','State Farm Arena'),
-('1610612738','Boston Celtics','BOS','East','/static/Logos/Boston_Celtics.png','Boston','MA','USA','TD Garden'),
-('1610612751','Brooklyn Nets','BKN','East','/static/Logos/Brooklyn_Nets.png','Brooklyn','NY','USA','Barclays Center'),
-('1610612766','Charlotte Hornets','CHA','East','/static/Logos/Charlotte__Hornets.png','Charlotte','NC','USA','Spectrum Center'),
-('1610612741','Chicago Bulls','CHI','East','/static/Logos/Chicago_Bulls.png','Chicago','IL','USA','United Center'),
-('1610612739','Cleveland Cavaliers','CLE','East','/static/Logos/Cleveland_Cavaliers.png','Cleveland','OH','USA','Rocket Mortgage FieldHouse'),
-('1610612742','Dallas Mavericks','DAL','West','/static/Logos/Dallas_Mavericks.png','Dallas','TX','USA','American Airlines Center'),
-('1610612743','Denver Nuggets','DEN','West','/static/Logos/Denver_Nuggets.png','Denver','CO','USA','Ball Arena'),
-('1610612765','Detroit Pistons','DET','East','/static/Logos/Detroit_Pistons.png','Detroit','MI','USA','Little Caesars Arena'),
-('1610612744','Golden State Warriors','GSW','West','/static/Logos/Golden_State_Warriors.png','San Francisco','CA','USA','Chase Center'),
-('1610612745','Houston Rockets','HOU','West','/static/Logos/Houston_Rockets.png','Houston','TX','USA','Toyota Center'),
-('1610612754','Indiana Pacers','IND','East','/static/Logos/Indiana_Pacers.png','Indianapolis','IN','USA','Gainbridge Fieldhouse'),
-('1610612746','Los Angeles Clippers','LAC','West','/static/Logos/Los_Angeles_Clippers.png','Los Angeles','CA','USA','Intuit Dome'),
-('1610612747','Los Angeles Lakers','LAL','West','/static/Logos/Los_Angeles_Lakers.png','Los Angeles','CA','USA','Crypto.com Arena'),
-('1610612763','Memphis Grizzlies','MEM','West','/static/Logos/Memphis_Grizzlies.png','Memphis','TN','USA','FedExForum'),
-('1610612748','Miami Heat','MIA','East','/static/Logos/Miami_Heat.png','Miami','FL','USA','Kaseya Center'),
-('1610612749','Milwaukee Bucks','MIL','East','/static/Logos/Milwaukee_Bucks.png','Milwaukee','WI','USA','Fiserv Forum'),
-('1610612750','Minnesota Timberwolves','MIN','West','/static/Logos/Minnesota_Timberwolves.png','Minneapolis','MN','USA','Target Center'),
-('1610612740','New Orleans Pelicans','NOP','West','/static/Logos/New_Orleans_Pelicans.png','New Orleans','LA','USA','Smoothie King Center'),
-('1610612752','New York Knicks','NYK','East','/static/Logos/New_York_Knicks.png','New York','NY','USA','Madison Square Garden'),
-('1610612760','Oklahoma City Thunder','OKC','West','/static/Logos/OKC-Thunder.png','Oklahoma City','OK','USA','Paycom Center'),
-('1610612753','Orlando Magic','ORL','East','/static/Logos/Orlando_Magic.png','Orlando','FL','USA','Kia Center'),
-('1610612755','Philadelphia 76ers','PHI','East','/static/Logos/Philadelphia_76ers.png','Philadelphia','PA','USA','Wells Fargo Center'),
-('1610612756','Phoenix Suns','PHX','West','/static/Logos/Phoenix_Suns.png','Phoenix','AZ','USA','Footprint Center'),
-('1610612757','Portland Trail Blazers','POR','West','/static/Logos/Portland_Trail_Blazers.png','Portland','OR','USA','Moda Center'),
-('1610612758','Sacramento Kings','SAC','West','/static/Logos/Sacramento_Kings.png','Sacramento','CA','USA','Golden 1 Center'),
-('1610612759','San Antonio Spurs','SAS','West','/static/Logos/San_Antonio_Spurs.png','San Antonio','TX','USA','Frost Bank Center'),
-('1610612761','Toronto Raptors','TOR','East','/static/Logos/Toronto_Raptors.png','Toronto','ON','Canada','Scotiabank Arena'),
-('1610612762','Utah Jazz','UTA','West','/static/Logos/Utah_Jazz.png','Salt Lake City','UT','USA','Delta Center'),
-('1610612764','Washington Wizards','WAS','East','/static/Logos/Washington_Wizards.png','Washington','DC','USA','Capital One Arena');
+('1610612738','Boston Celtics','BOS','East','/static/Logos/Boston_Celtics.png','Boston','MA','USA','TD Garden');
+
 -- STANDINGS (sample)
 INSERT INTO team_standings (team_id, wins, losses) VALUES
 (1, 28, 25),

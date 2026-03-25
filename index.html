@@ -1,21 +1,37 @@
-pyth<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8">
-    <title>React App</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HoopWatch - Live NBA Games</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <span class="brand-name">HoopWatch</span>
+        </div>
+    
+        <div style="margin-left:auto; display:flex; gap:14px; align-items:center;">
+            <a href="teams.html" style="color:#111827; text-decoration:none; font-weight:600;">Teams</a>
+            <a href="qotd.html" style="color:#111827; text-decoration:none; font-weight:600;">QOTD</a>
+        </div>
 
-<iframe
-  width="560"
-  height="315"
-  src="https://www.youtube.com/embed/5GcLhlOCgdM"
-  title="YouTube video player"
-  frameborder="0"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-  allowfullscreen>
-</iframe>
+    </nav>
+
+    <div class="container">
+        <div class="hero-section">
+            <h1>Live NBA Games</h1>
+            <p>Today's games updating in real-time</p>
+            <button onclick="manualRefresh()" class="refresh-btn">Refresh Now</button>
+        </div>
+
+        <div id="games-container" class="games-container">
+            <div class="loading">Loading games...</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

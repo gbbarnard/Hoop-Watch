@@ -1,221 +1,256 @@
 <!DOCTYPE html>
-<html>
 
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Question of the Day</title>
-    <style>
-        body {
-            font-family: Arial;
-            background: #f4f4f4;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: auto;
-        }
-
-        .card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-
-        .comment {
-            background: #f1f1f1;
-            padding: 10px;
-            border-radius: 8px;
-            margin-top: 10px;
-        }
-
-        .reply {
-            background: #e5e5e5;
-            padding: 8px;
-            border-radius: 6px;
-            margin-left: 30px;
-            margin-top: 5px;
-        }
-
-        button {
-            padding: 6px 10px;
-            background: black;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 5px;
-        }
-
-        input,
-        textarea {
-            width: 100%;
-            margin-top: 8px;
-            padding: 8px;
-            box-sizing: border-box;
-        }
-
-        .reply-box {
-            margin-top: 8px;
-        }
-    </style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>QOTD | HoopWatch</title>
+<link href="styles.css" rel="stylesheet"/>
 </head>
-
 <body>
+<nav class="navbar">
+<div class="nav-brand">
+<img alt="HoopWatch" class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png"/>
+<span class="brand-name">HoopWatch</span>
+</div>
+<ul class="nav-menu">
+<li><a href="index.html">Games</a></li>
+<li><a href="teams.html">Teams</a></li>
+<li><a class="active" href="qotd.html">QOTD</a></li>
+</ul>
+</nav>
+<main class="container">
+<div class="hero-section" style="text-align:center;">
+<h1>Question of the Day</h1>
+<p>Answer today’s prompt and reply to others.</p>
+</div>
+<div class="qotd-page">
+<div class="qotd-shell">
+<div class="qotd-topbar">
+<div class="qotd-date-wrap" style="min-width:240px;">
+<label for="dateSelector">Pick a date</label>
+<input id="dateSelector" type="date"/>
+</div>
+</div>
+<div id="questionContainer"></div>
+</div>
+</div>
+</main>
+<script>
+const dateInput = document.getElementById("dateSelector");
+const today = new Date().toISOString().split("T")[0];
+dateInput.value = today;
 
-    <div class="container">
-        <h1>Question of the Day</h1>
-        <input type="date" id="dateSelector">
-        <div id="questionContainer"></div>
-    </div>
+let currentQuestionId = null;
+let allComments = [];
 
-    <script>
-        const dateInput = document.getElementById("dateSelector");
-        const today = new Date().toISOString().split('T')[0];
-        dateInput.value = today;
+dateInput.addEventListener("change", loadQuestion);
 
-        let currentQuestionId = null;
-        let allComments = [];
+function getMainUserId() {
+  const el = document.getElementById("userId");
+  const v = el ? el.value.trim() : "";
+  return v ? parseInt(v, 10) : null;
+}
 
-        dateInput.addEventListener("change", loadQuestion);
+async function loadQuestion() {
+  const date = dateInput.value;
 
-        async function loadQuestion() {
-            const date = dateInput.value;
+  const res = await fetch(`http://localhost:8000/api/qotd/${date}`);
+  const question = await res.json();
 
-            const res = await fetch(`http://localhost:8000/api/qotd/${date}`);
-            const question = await res.json();
+  const container = document.getElementById("questionContainer");
+  container.innerHTML = "";
 
-            const container = document.getElementById("questionContainer");
-            container.innerHTML = "";
+  if (!question || !question.question_id) {
+    container.innerHTML = `<div class="qotd-empty"><p class="no-question">No question for this date.</p></div>`;
+    return;
+  }
 
-            if (!question || !question.question_id) {
-                container.innerHTML = "<p>No question for this date.</p>";
-                return;
-            }
+  currentQuestionId = question.question_id;
 
-            currentQuestionId = question.question_id;
+  container.innerHTML = `
+    <div class="qotd-card">
+      <h2 class="qotd-question">${question.question_text}</h2>
 
-            container.innerHTML = `
-    <div class="card">
-      <h2>${question.question_text}</h2>
-
-      <input type="number" id="userId" placeholder="Your user ID">
-      <textarea id="commentText" rows="3" placeholder="Write comment..."></textarea>
-      <button onclick="postComment(null)">Post Comment</button>
+      <div class="qotd-comment-form">
+        <input type="number" id="userId" class="qotd-input" placeholder="Your user ID (e.g., 1)">
+        <textarea id="commentText" class="qotd-textarea" rows="3" placeholder="Write comment..."></textarea>
+        <button class="reply-btn" onclick="postComment(null)">Post Comment</button>
+      </div>
 
       <div id="comments"></div>
     </div>
   `;
 
-            loadComments();
-        }
+  loadComments();
+}
 
-        async function loadComments() {
-            const res = await fetch(
-                `http://localhost:8000/api/qotd/${currentQuestionId}/comments`
-            );
-            allComments = await res.json();
+async function loadComments() {
+  const container = document.getElementById("comments");
+  if (!container) return;
 
-            renderComments();
-        }
+  const res = await fetch(`http://localhost:8000/api/qotd/${currentQuestionId}/comments`);
+  if (!res.ok) {
+    container.innerHTML = `<p class="qotd-empty">Could not load comments.</p>`;
+    return;
+  }
 
-        function renderComments() {
-            const container = document.getElementById("comments");
-            container.innerHTML = "";
+  allComments = await res.json();
+  renderComments();
+}
 
-            const topLevel = allComments.filter(c => !c.parent_comment_id);
+function renderComments() {
+  const container = document.getElementById("comments");
+  container.innerHTML = "";
 
-            topLevel.forEach(comment => {
-                container.appendChild(createCommentElement(comment, false));
-            });
-        }
+  const topLevel = allComments.filter(c => !c.parent_comment_id);
 
-        function createCommentElement(comment, isReply) {
-            const div = document.createElement("div");
-            div.className = isReply ? "reply" : "comment";
-            div.innerHTML = `
-    <strong>${comment.user_name || comment.user_id}</strong>
-    <p>${comment.comment_text}</p>
-    <button onclick="showReplyBox(${comment.comment_id}, this)">Reply</button>
+  if (!topLevel.length) {
+    container.innerHTML = `<p class="qotd-empty">No comments yet.</p>`;
+    return;
+  }
+
+  topLevel.forEach(comment => {
+    container.appendChild(createCommentElement(comment, false));
+  });
+}
+
+function safeCount(v) {
+  if (v === null || v === undefined) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function createCommentElement(comment, isReply) {
+  const div = document.createElement("div");
+  div.className = isReply ? "qotd-reply" : "qotd-comment";
+
+  const up = safeCount(comment.upvotes);
+  const down = safeCount(comment.downvotes);
+  const who = (comment.user_name && String(comment.user_name).trim()) ? comment.user_name : comment.user_id;
+
+  div.innerHTML = `
+    <div class="qotd-comment-header">${who}</div>
+    <p class="qotd-comment-text">${comment.comment_text}</p>
+
+    <div class="qotd-actions">
+      <button class="vote-btn" onclick="voteComment(${comment.comment_id}, 1)">▲ ${up}</button>
+      <button class="vote-btn" onclick="voteComment(${comment.comment_id}, -1)">▼ ${down}</button>
+      <button class="reply-btn" onclick="showReplyBox(${comment.comment_id}, this)">Reply</button>
+    </div>
+
     <div class="replies"></div>
   `;
 
-            const repliesContainer = div.querySelector(".replies");
+  const repliesContainer = div.querySelector(".replies");
+  const replies = allComments.filter(c => c.parent_comment_id === comment.comment_id);
 
-            const replies = allComments.filter(
-                c => c.parent_comment_id === comment.comment_id
-            );
+  replies.forEach(reply => {
+    repliesContainer.appendChild(createCommentElement(reply, true));
+  });
 
-            replies.forEach(reply => {
-                repliesContainer.appendChild(createCommentElement(reply, true));
-            });
+  return div;
+}
 
-            return div;
-        }
+function showReplyBox(parentId, button) {
+  const root = button.closest(".qotd-comment, .qotd-reply");
+  if (!root) return;
 
-        function showReplyBox(parentId, button) {
-            if (button.nextElementSibling && button.nextElementSibling.classList.contains("reply-box")) {
-                return;
-            }
+  // Prevent duplicate reply boxes
+  const existing = root.querySelector(".reply-box");
+  if (existing) return;
 
-            const replyBox = document.createElement("div");
-            replyBox.className = "reply-box";
-            replyBox.innerHTML = `
+  const replyBox = document.createElement("div");
+  replyBox.className = "reply-box";
+  replyBox.innerHTML = `
     <input type="number" placeholder="Your user ID" class="replyUser">
     <textarea rows="2" placeholder="Write reply..." class="replyText"></textarea>
-    <button onclick="submitReply(${parentId}, this)">Post Reply</button>
+    <button class="reply-btn" onclick="submitReply(${parentId}, this)">Post Reply</button>
   `;
 
-            button.parentElement.appendChild(replyBox);
-        }
+  root.appendChild(replyBox);
+}
 
-        async function submitReply(parentId, button) {
-            const box = button.parentElement;
-            const userId = box.querySelector(".replyUser").value;
-            const text = box.querySelector(".replyText").value;
+async function submitReply(parentId, button) {
+  const box = button.parentElement;
+  const userId = box.querySelector(".replyUser").value;
+  const text = box.querySelector(".replyText").value;
 
-            if (!userId || !text) {
-                alert("Fill out both fields");
-                return;
-            }
+  if (!userId || !text) {
+    alert("Fill out both fields");
+    return;
+  }
 
-            await postComment(parentId, userId, text);
-        }
+  await postComment(parentId, userId, text);
 
-        async function postComment(parentId, customUser = null, customText = null) {
-            const userId = customUser || document.getElementById("userId").value;
-            const commentText = customText || document.getElementById("commentText").value;
+  // Remove the reply box after posting
+  box.remove();
+}
 
-            if (!userId || !commentText) {
-                alert("Fill out both fields");
-                return;
-            }
+async function postComment(parentId, customUser = null, customText = null) {
+  const userId = customUser || (document.getElementById("userId") ? document.getElementById("userId").value : "");
+  const commentText = customText || (document.getElementById("commentText") ? document.getElementById("commentText").value : "");
 
-            const res = await fetch("http://localhost:8000/api/qotd/comment", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    question_id: currentQuestionId,
-                    user_id: parseInt(userId),
-                    parent_comment_id: parentId,
-                    comment_text: commentText
-                })
-            });
+  if (!userId || !commentText) {
+    alert("Fill out both fields");
+    return;
+  }
 
-            if (!res.ok) {
-                const err = await res.json();
-                alert("Error: " + (err.error || "Failed to post"));
-                return;
-            }
+  const res = await fetch("http://localhost:8000/api/qotd/comment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question_id: currentQuestionId,
+      user_id: parseInt(userId, 10),
+      parent_comment_id: parentId,
+      comment_text: commentText
+    })
+  });
 
-            document.getElementById("commentText").value = "";
-            loadComments();
-        }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert("Error: " + (err.error || "Failed to post"));
+    return;
+  }
 
-        loadQuestion();
-    </script>
+  const mainBox = document.getElementById("commentText");
+  if (mainBox) mainBox.value = "";
 
+  loadComments();
+}
+
+async function voteComment(commentId, vote) {
+  let userId = getMainUserId();
+  if (!userId) {
+    const entered = prompt("Enter your user ID for voting:");
+    if (!entered) return;
+    userId = parseInt(entered, 10);
+    if (!Number.isFinite(userId)) {
+      alert("Invalid user ID");
+      return;
+    }
+  }
+
+  const res = await fetch("http://localhost:8000/api/qotd/vote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      comment_id: commentId,
+      user_id: userId,
+      vote_value: vote
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert("Error: " + (err.error || "Failed to vote"));
+    return;
+  }
+
+  loadComments();
+}
+
+loadQuestion();
+</script>
 </body>
-
 </html>
