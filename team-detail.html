@@ -23,6 +23,9 @@
   <main class="container team-detail-shell">
     <section class="team-hero-layout">
       <div class="team-header team-hero-card" id="team-header">
+        <button id="favorite-team-btn" class="card-icon-btn team-favorite-btn" type="button" title="Add to favorites"
+          aria-label="Add to favorites">☆</button>
+
         <div class="team-logo team-logo-hero" id="team-logo">
           <img id="team-logo-img" alt="Team Logo" referrerpolicy="no-referrer" decoding="async" loading="eager"
             style="width:120px;height:120px;object-fit:contain;display:none;">
@@ -40,24 +43,6 @@
         </div>
       </div>
 
-      <section class="favorite-look-card detail-surface-card">
-        <div class="feature-look-header">
-          <div>
-            <div class="page-kicker">Personalize</div>
-            <h3>Favorite Team</h3>
-            <p id="favorite-team-status">Use the button to add this team to favorites.</p>
-          </div>
-          <div class="feature-icon-badge">⭐</div>
-        </div>
-
-        <div class="feature-look-body">
-          <label for="favorite-user-id" class="fan-tools-label">Demo User ID</label>
-          <input id="favorite-user-id" class="fan-tools-input feature-look-input" type="number" min="1"
-            placeholder="Example: 2">
-          <div class="fan-tools-help" id="favorite-team-label">Save this team for a user in your database.</div>
-          <button id="favorite-team-btn" class="fan-action-btn feature-full-btn" type="button">Add Favorite</button>
-        </div>
-      </section>
     </section>
 
     <section class="roster-section detail-surface-card">

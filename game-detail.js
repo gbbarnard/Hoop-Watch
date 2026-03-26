@@ -209,6 +209,21 @@ function displayQuarterScores(homePeriods, awayPeriods) {
     container.style.display = 'block';
 }
 
+function getStatValue(source, keys, fallback = 0) {
+    for (const key of keys) {
+        if (source && source[key] !== undefined && source[key] !== null && source[key] !== '') {
+            return source[key];
+        }
+    }
+    return fallback;
+}
+
+function formatPercent(value) {
+    const numeric = Number(value || 0);
+    const percent = numeric <= 1 ? numeric * 100 : numeric;
+    return `${percent.toFixed(1)}%`;
+}
+
 function displayTeamStats(homeStats, awayStats) {
     const container = document.getElementById('team-stats');
 
@@ -220,80 +235,80 @@ function displayTeamStats(homeStats, awayStats) {
     const stats = [
         {
             label: 'Field Goals',
-            homeValue: `${homeStats.fgm || 0}-${homeStats.fga || 0}`,
-            awayValue: `${awayStats.fgm || 0}-${awayStats.fga || 0}`,
-            homeCompare: homeStats.fgm || 0,
-            awayCompare: awayStats.fgm || 0
+            homeValue: `${getStatValue(homeStats, ['fgm', 'fieldGoalsMade'])}-${getStatValue(homeStats, ['fga', 'fieldGoalsAttempted'])}`,
+            awayValue: `${getStatValue(awayStats, ['fgm', 'fieldGoalsMade'])}-${getStatValue(awayStats, ['fga', 'fieldGoalsAttempted'])}`,
+            homeCompare: Number(getStatValue(homeStats, ['fgm', 'fieldGoalsMade'])),
+            awayCompare: Number(getStatValue(awayStats, ['fgm', 'fieldGoalsMade']))
         },
         {
             label: 'FG%',
-            homeValue: `${((homeStats.fg_pct || 0) * 100).toFixed(1)}%`,
-            awayValue: `${((awayStats.fg_pct || 0) * 100).toFixed(1)}%`,
-            homeCompare: homeStats.fg_pct || 0,
-            awayCompare: awayStats.fg_pct || 0
+            homeValue: formatPercent(getStatValue(homeStats, ['fg_pct', 'fieldGoalsPercentage'])),
+            awayValue: formatPercent(getStatValue(awayStats, ['fg_pct', 'fieldGoalsPercentage'])),
+            homeCompare: Number(getStatValue(homeStats, ['fg_pct', 'fieldGoalsPercentage'])),
+            awayCompare: Number(getStatValue(awayStats, ['fg_pct', 'fieldGoalsPercentage']))
         },
         {
             label: '3-Pointers',
-            homeValue: `${homeStats.fg3m || 0}-${homeStats.fg3a || 0}`,
-            awayValue: `${awayStats.fg3m || 0}-${awayStats.fg3a || 0}`,
-            homeCompare: homeStats.fg3m || 0,
-            awayCompare: awayStats.fg3m || 0
+            homeValue: `${getStatValue(homeStats, ['fg3m', 'threePointersMade'])}-${getStatValue(homeStats, ['fg3a', 'threePointersAttempted'])}`,
+            awayValue: `${getStatValue(awayStats, ['fg3m', 'threePointersMade'])}-${getStatValue(awayStats, ['fg3a', 'threePointersAttempted'])}`,
+            homeCompare: Number(getStatValue(homeStats, ['fg3m', 'threePointersMade'])),
+            awayCompare: Number(getStatValue(awayStats, ['fg3m', 'threePointersMade']))
         },
         {
             label: '3P%',
-            homeValue: `${((homeStats.fg3_pct || 0) * 100).toFixed(1)}%`,
-            awayValue: `${((awayStats.fg3_pct || 0) * 100).toFixed(1)}%`,
-            homeCompare: homeStats.fg3_pct || 0,
-            awayCompare: awayStats.fg3_pct || 0
+            homeValue: formatPercent(getStatValue(homeStats, ['fg3_pct', 'threePointersPercentage'])),
+            awayValue: formatPercent(getStatValue(awayStats, ['fg3_pct', 'threePointersPercentage'])),
+            homeCompare: Number(getStatValue(homeStats, ['fg3_pct', 'threePointersPercentage'])),
+            awayCompare: Number(getStatValue(awayStats, ['fg3_pct', 'threePointersPercentage']))
         },
         {
             label: 'Free Throws',
-            homeValue: `${homeStats.ftm || 0}-${homeStats.fta || 0}`,
-            awayValue: `${awayStats.ftm || 0}-${awayStats.fta || 0}`,
-            homeCompare: homeStats.ftm || 0,
-            awayCompare: awayStats.ftm || 0
+            homeValue: `${getStatValue(homeStats, ['ftm', 'freeThrowsMade'])}-${getStatValue(homeStats, ['fta', 'freeThrowsAttempted'])}`,
+            awayValue: `${getStatValue(awayStats, ['ftm', 'freeThrowsMade'])}-${getStatValue(awayStats, ['fta', 'freeThrowsAttempted'])}`,
+            homeCompare: Number(getStatValue(homeStats, ['ftm', 'freeThrowsMade'])),
+            awayCompare: Number(getStatValue(awayStats, ['ftm', 'freeThrowsMade']))
         },
         {
             label: 'FT%',
-            homeValue: `${((homeStats.ft_pct || 0) * 100).toFixed(1)}%`,
-            awayValue: `${((awayStats.ft_pct || 0) * 100).toFixed(1)}%`,
-            homeCompare: homeStats.ft_pct || 0,
-            awayCompare: awayStats.ft_pct || 0
+            homeValue: formatPercent(getStatValue(homeStats, ['ft_pct', 'freeThrowsPercentage'])),
+            awayValue: formatPercent(getStatValue(awayStats, ['ft_pct', 'freeThrowsPercentage'])),
+            homeCompare: Number(getStatValue(homeStats, ['ft_pct', 'freeThrowsPercentage'])),
+            awayCompare: Number(getStatValue(awayStats, ['ft_pct', 'freeThrowsPercentage']))
         },
         {
             label: 'Rebounds',
-            homeValue: homeStats.reb || 0,
-            awayValue: awayStats.reb || 0,
-            homeCompare: homeStats.reb || 0,
-            awayCompare: awayStats.reb || 0
+            homeValue: getStatValue(homeStats, ['rebounds', 'reb', 'reboundsTotal']),
+            awayValue: getStatValue(awayStats, ['rebounds', 'reb', 'reboundsTotal']),
+            homeCompare: Number(getStatValue(homeStats, ['rebounds', 'reb', 'reboundsTotal'])),
+            awayCompare: Number(getStatValue(awayStats, ['rebounds', 'reb', 'reboundsTotal']))
         },
         {
             label: 'Assists',
-            homeValue: homeStats.ast || 0,
-            awayValue: awayStats.ast || 0,
-            homeCompare: homeStats.ast || 0,
-            awayCompare: awayStats.ast || 0
+            homeValue: getStatValue(homeStats, ['assists', 'ast']),
+            awayValue: getStatValue(awayStats, ['assists', 'ast']),
+            homeCompare: Number(getStatValue(homeStats, ['assists', 'ast'])),
+            awayCompare: Number(getStatValue(awayStats, ['assists', 'ast']))
         },
         {
             label: 'Steals',
-            homeValue: homeStats.stl || 0,
-            awayValue: awayStats.stl || 0,
-            homeCompare: homeStats.stl || 0,
-            awayCompare: awayStats.stl || 0
+            homeValue: getStatValue(homeStats, ['steals', 'stl']),
+            awayValue: getStatValue(awayStats, ['steals', 'stl']),
+            homeCompare: Number(getStatValue(homeStats, ['steals', 'stl'])),
+            awayCompare: Number(getStatValue(awayStats, ['steals', 'stl']))
         },
         {
             label: 'Blocks',
-            homeValue: homeStats.blk || 0,
-            awayValue: awayStats.blk || 0,
-            homeCompare: homeStats.blk || 0,
-            awayCompare: awayStats.blk || 0
+            homeValue: getStatValue(homeStats, ['blocks', 'blk']),
+            awayValue: getStatValue(awayStats, ['blocks', 'blk']),
+            homeCompare: Number(getStatValue(homeStats, ['blocks', 'blk'])),
+            awayCompare: Number(getStatValue(awayStats, ['blocks', 'blk']))
         },
         {
             label: 'Turnovers',
-            homeValue: homeStats.turnovers || 0,
-            awayValue: awayStats.turnovers || 0,
-            homeCompare: -(homeStats.turnovers || 0),
-            awayCompare: -(awayStats.turnovers || 0)
+            homeValue: getStatValue(homeStats, ['turnovers', 'turnoversTotal']),
+            awayValue: getStatValue(awayStats, ['turnovers', 'turnoversTotal']),
+            homeCompare: -Number(getStatValue(homeStats, ['turnovers', 'turnoversTotal'])),
+            awayCompare: -Number(getStatValue(awayStats, ['turnovers', 'turnoversTotal']))
         }
     ];
 
@@ -311,12 +326,55 @@ function displayTeamStats(homeStats, awayStats) {
     }).join('');
 }
 
-function formatMinutes(seconds) {
-    if (seconds === null || seconds === undefined) return '0:00';
-    const totalSeconds = Number(seconds);
+function parseMinutesToSeconds(value) {
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+
+    if (typeof value === 'string' && value.startsWith('PT')) {
+        const match = value.match(/PT(?:(\d+)M)?([\d.]+)S/);
+        if (match) {
+            const mins = Number(match[1] || 0);
+            const secs = Math.floor(Number(match[2] || 0));
+            return mins * 60 + secs;
+        }
+    }
+
+    if (typeof value === 'string' && value.includes(':')) {
+        const [mins, secs] = value.split(':').map(Number);
+        return (Number(mins) || 0) * 60 + (Number(secs) || 0);
+    }
+
+    return Number(value) || 0;
+}
+
+function formatMinutes(value) {
+    const totalSeconds = parseMinutesToSeconds(value);
     const mins = Math.floor(totalSeconds / 60);
     const secs = Math.round(totalSeconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function getPlayerStats(player) {
+    if (player.statistics) return player.statistics;
+
+    return {
+        seconds: parseMinutesToSeconds(player.minutes),
+        minutesCalculated: parseMinutesToSeconds(player.minutes),
+        points: player.points || 0,
+        fieldGoalsMade: player.fgm || 0,
+        fieldGoalsAttempted: player.fga || 0,
+        threePointersMade: player.fg3m || 0,
+        threePointersAttempted: player.fg3a || 0,
+        freeThrowsMade: player.ftm || 0,
+        freeThrowsAttempted: player.fta || 0,
+        reboundsTotal: player.rebounds || 0,
+        assists: player.assists || 0,
+        steals: player.steals || 0,
+        blocks: player.blocks || 0,
+        turnovers: player.turnovers || 0,
+        foulsPersonal: player.fouls || 0,
+        plusMinusPoints: player.plusMinus || 0
+    };
 }
 
 function displayBoxScore(teamType, team) {
@@ -332,13 +390,14 @@ function displayBoxScore(teamType, team) {
         return;
     }
 
-    const starters = team.players.filter((player) => player.statistics?.minutesCalculated > 0).sort((a, b) => {
-        const minutesA = a.statistics?.minutesCalculated || 0;
-        const minutesB = b.statistics?.minutesCalculated || 0;
+    const sortedPlayers = [...team.players].sort((a, b) => {
+        const minutesA = getPlayerStats(a).minutesCalculated || getPlayerStats(a).seconds || 0;
+        const minutesB = getPlayerStats(b).minutesCalculated || getPlayerStats(b).seconds || 0;
         return minutesB - minutesA;
     });
 
-    const bench = team.players.filter((player) => !starters.includes(player));
+    const starters = sortedPlayers.filter((player) => player.starter);
+    const bench = sortedPlayers.filter((player) => !player.starter);
 
     let html = `
         <thead>
@@ -362,7 +421,7 @@ function displayBoxScore(teamType, team) {
     `;
 
     starters.forEach((player) => {
-        const stats = player.statistics || {};
+        const stats = getPlayerStats(player);
         const plusMinus = stats.plusMinusPoints || 0;
         const plusMinusClass = plusMinus > 0 ? 'positive' : plusMinus < 0 ? 'negative' : '';
 
@@ -395,7 +454,7 @@ function displayBoxScore(teamType, team) {
         html += '<tr class="bench-header"><td colspan="13">Bench</td></tr>';
 
         bench.forEach((player) => {
-            const stats = player.statistics || {};
+            const stats = getPlayerStats(player);
             const plusMinus = stats.plusMinusPoints || 0;
             const plusMinusClass = plusMinus > 0 ? 'positive' : plusMinus < 0 ? 'negative' : '';
 

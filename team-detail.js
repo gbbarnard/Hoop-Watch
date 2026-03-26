@@ -24,45 +24,41 @@ async function fetchJson(url, options = {}) {
   return data;
 }
 
-const favoriteUserInput = document.getElementById('favorite-user-id');
 const favoriteTeamBtn = document.getElementById('favorite-team-btn');
-const favoriteTeamStatus = document.getElementById('favorite-team-status');
-const favoriteTeamLabel = document.getElementById('favorite-team-label');
 
 let currentTeam = null;
 let isFavorite = false;
 
 function getFavoriteUserIdOrWarn() {
-  const value = Number(String(favoriteUserInput.value || '').trim());
+  let saved = String(readSavedUserId() || '').trim();
+
+  if (!saved) {
+    saved = String(prompt('Enter your demo user ID:') || '').trim();
+  }
+
+  const value = Number(saved);
   if (!value || value < 1) {
     alert('Enter a valid user ID first. Example: 2');
-    favoriteUserInput.focus();
     return null;
   }
+
   localStorage.setItem(USER_ID_STORAGE_KEY, String(value));
   return value;
 }
 
 function updateFavoriteButton() {
-  favoriteTeamBtn.textContent = isFavorite ? 'Favorited' : 'Add Favorite';
+  if (!favoriteTeamBtn) return;
+
+  favoriteTeamBtn.textContent = isFavorite ? '★' : '☆';
   favoriteTeamBtn.classList.toggle('active', isFavorite);
-
-  if (!currentTeam) {
-    favoriteTeamLabel.textContent = 'Save this team';
-    favoriteTeamStatus.textContent = 'Use the button to add this team to favorites.';
-    return;
-  }
-
-  favoriteTeamLabel.textContent = currentTeam.full_name || currentTeam.name || 'This team';
-  favoriteTeamStatus.textContent = isFavorite
-    ? 'This team is already saved to favorites for your user ID.'
-    : 'Use the button to add this team to favorites.';
+  favoriteTeamBtn.title = isFavorite ? 'Remove from favorites' : 'Add to favorites';
+  favoriteTeamBtn.setAttribute('aria-label', favoriteTeamBtn.title);
 }
 
 async function refreshFavoriteStatus() {
   if (!currentTeam) return;
 
-  const userId = Number(String(favoriteUserInput.value || '').trim());
+  const userId = Number(String(readSavedUserId() || '').trim());
   if (!userId) {
     isFavorite = false;
     updateFavoriteButton();
@@ -281,13 +277,6 @@ function displayRoster(players) {
   });
 }
 
-favoriteUserInput.value = readSavedUserId();
-favoriteUserInput.addEventListener('change', () => {
-  if (favoriteUserInput.value) {
-    localStorage.setItem(USER_ID_STORAGE_KEY, favoriteUserInput.value);
-  }
-  refreshFavoriteStatus();
-});
 favoriteTeamBtn.addEventListener('click', toggleFavoriteTeam);
 updateFavoriteButton();
 fetchTeamData();
