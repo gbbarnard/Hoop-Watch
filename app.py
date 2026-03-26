@@ -2340,6 +2340,374 @@ def remove_game_alert(game_identifier, user_id):
         connection.close()
 
 
+
+
+def _get_user_game_collection(user_id, collection_type='watchlist'):
+    connection = get_db_connection()
+    if not connection:
+        return None, 'Database connection failed'
+
+    if collection_type == 'watchlist':
+        join_sql = "JOIN watchlist item ON item.game_id = g.game_id"
+        item_id_sql = "item.watch_id AS item_id"
+        where_sql = "item.user_id = %s"
+    elif collection_type == 'alerts':
+        join_sql = "JOIN alert_rules item ON item.game_id = g.game_id AND item.rule_type = 'game_start'"
+        item_id_sql = "item.alert_rule_id AS item_id"
+        where_sql = "item.user_id = %s"
+    else:
+        connection.close()
+        return None, 'Invalid collection type'
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            f"""
+            SELECT
+                {item_id_sql},
+                item.created_at AS saved_at,
+                g.game_id,
+                COALESCE(g.nba_game_id, CAST(g.game_id AS CHAR)) AS game_identifier,
+                g.nba_game_id,
+                g.game_date,
+                g.start_time,
+                g.status,
+                gc.home_score,
+                gc.away_score,
+                gc.period,
+                gc.clock,
+                ht.team_id AS home_team_id,
+                ht.name AS home_name,
+                ht.city AS home_city,
+                ht.abbreviation AS home_abbreviation,
+                ht.nba_team_id AS home_nba_team_id,
+                ht.logo_url AS home_logo_url,
+                COALESCE(hs.wins, 0) AS home_wins,
+                COALESCE(hs.losses, 0) AS home_losses,
+                at.team_id AS away_team_id,
+                at.name AS away_name,
+                at.city AS away_city,
+                at.abbreviation AS away_abbreviation,
+                at.nba_team_id AS away_nba_team_id,
+                at.logo_url AS away_logo_url,
+                COALESCE(aws.wins, 0) AS away_wins,
+                COALESCE(aws.losses, 0) AS away_losses
+            FROM games g
+            {join_sql}
+            JOIN teams ht ON g.home_team_id = ht.team_id
+            JOIN teams at ON g.away_team_id = at.team_id
+            LEFT JOIN team_standings hs ON ht.team_id = hs.team_id
+            LEFT JOIN team_standings aws ON at.team_id = aws.team_id
+            LEFT JOIN game_cache gc ON g.game_id = gc.game_id
+            WHERE {where_sql}
+            ORDER BY
+                CASE
+                    WHEN g.status = 'live' THEN 0
+                    WHEN g.status = 'scheduled' THEN 1
+                    ELSE 2
+                END,
+                g.game_date DESC,
+                item.created_at DESC
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+        return rows, None
+    except Error as e:
+        return None, str(e)
+    finally:
+        connection.close()
+
+
+def _get_user_comment_replies(user_id):
+    connection = get_db_connection()
+    if not connection:
+        return None, 'Database connection failed'
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT *
+            FROM (
+                SELECT
+                    CAST('game' AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS source_type,
+                    reply.comment_id AS reply_id,
+                    CONVERT(reply.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reply_text,
+                    reply.created_at AS reply_created_at,
+                    parent.comment_id AS your_comment_id,
+                    CONVERT(parent.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS your_comment_text,
+                    reply.user_id AS replier_user_id,
+                    CONVERT(COALESCE(reply_user.email, CONCAT('User ', reply.user_id)) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS replier_name,
+                    g.game_id,
+                    CONVERT(COALESCE(g.nba_game_id, CAST(g.game_id AS CHAR)) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS game_identifier,
+                    CONVERT(g.nba_game_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS nba_game_id,
+                    g.game_date,
+                    ht.team_id AS home_team_id,
+                    CONVERT(ht.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
+                    CONVERT(ht.city USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_city,
+                    CONVERT(ht.abbreviation USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_abbreviation,
+                    ht.nba_team_id AS home_nba_team_id,
+                    at.team_id AS away_team_id,
+                    CONVERT(at.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name,
+                    CONVERT(at.city USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_city,
+                    CONVERT(at.abbreviation USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_abbreviation,
+                    at.nba_team_id AS away_nba_team_id,
+                    NULL AS question_id,
+                    NULL AS question_date,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS question_text
+                FROM game_comments parent
+                JOIN game_comments reply ON reply.parent_comment_id = parent.comment_id
+                JOIN users reply_user ON reply.user_id = reply_user.user_id
+                JOIN games g ON parent.game_id = g.game_id
+                JOIN teams ht ON g.home_team_id = ht.team_id
+                JOIN teams at ON g.away_team_id = at.team_id
+                WHERE parent.user_id = %s
+                  AND reply.user_id <> parent.user_id
+
+                UNION ALL
+
+                SELECT
+                    CAST('qotd' AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS source_type,
+                    reply.comment_id AS reply_id,
+                    CONVERT(reply.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reply_text,
+                    reply.created_at AS reply_created_at,
+                    parent.comment_id AS your_comment_id,
+                    CONVERT(parent.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS your_comment_text,
+                    reply.user_id AS replier_user_id,
+                    CONVERT(COALESCE(reply_user.email, CONCAT('User ', reply.user_id)) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS replier_name,
+                    NULL AS game_id,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS game_identifier,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS nba_game_id,
+                    NULL AS game_date,
+                    NULL AS home_team_id,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS home_city,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS home_abbreviation,
+                    NULL AS home_nba_team_id,
+                    NULL AS away_team_id,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS away_city,
+                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS away_abbreviation,
+                    NULL AS away_nba_team_id,
+                    q.question_id,
+                    q.question_date,
+                    CONVERT(q.question_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS question_text
+                FROM qotd_comments parent
+                JOIN qotd_comments reply ON reply.parent_comment_id = parent.comment_id
+                JOIN users reply_user ON reply.user_id = reply_user.user_id
+                JOIN qotd_questions q ON parent.question_id = q.question_id
+                WHERE parent.user_id = %s
+                  AND reply.user_id <> parent.user_id
+            ) replies
+            ORDER BY reply_created_at DESC
+            LIMIT 50
+            """,
+            (user_id, user_id),
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+        return rows, None
+    except Error as e:
+        return None, str(e)
+    finally:
+        connection.close()
+
+
+@app.route('/api/users/<int:user_id>/watchlist', methods=['GET'])
+def get_user_watchlist(user_id):
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    rows, error = _get_user_game_collection(user_id, 'watchlist')
+    if error:
+        status = 500 if error == 'Database connection failed' else 500
+        return jsonify({'error': error}), status
+    return jsonify(rows), 200
+
+
+@app.route('/api/games/<game_identifier>/watchlist/<int:user_id>', methods=['GET'])
+def get_watchlist_status(game_identifier, user_id):
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT watch_id
+            FROM watchlist
+            WHERE user_id = %s AND game_id = %s
+            LIMIT 1
+            """,
+            (user_id, internal_game_id),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify({'is_watchlisted': bool(row)}), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/watchlist', methods=['POST'])
+def add_game_to_watchlist(game_identifier):
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO watchlist (user_id, game_id, created_at)
+            VALUES (%s, %s, NOW())
+            ON DUPLICATE KEY UPDATE created_at = created_at
+            """,
+            (user_id, internal_game_id),
+        )
+        connection.commit()
+        cursor.close()
+        return jsonify({'message': 'Game added to watchlist'}), 201
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/watchlist/<int:user_id>', methods=['DELETE'])
+def remove_game_from_watchlist(game_identifier, user_id):
+    internal_game_id = resolve_internal_game_id(game_identifier, create_from_live=False)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM watchlist WHERE user_id = %s AND game_id = %s",
+            (user_id, internal_game_id),
+        )
+        connection.commit()
+        deleted = cursor.rowcount
+        cursor.close()
+        if deleted == 0:
+            return jsonify({'error': 'Watchlisted game not found'}), 404
+        return jsonify({'message': 'Game removed from watchlist'}), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/users/<int:user_id>/alerts', methods=['GET'])
+def get_user_alerts(user_id):
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    rows, error = _get_user_game_collection(user_id, 'alerts')
+    if error:
+        return jsonify({'error': error}), 500
+    return jsonify(rows), 200
+
+
+@app.route('/api/users/<int:user_id>/comment-replies', methods=['GET'])
+def get_user_comment_replies(user_id):
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    rows, error = _get_user_comment_replies(user_id)
+    if error:
+        return jsonify({'error': error}), 500
+    return jsonify(rows), 200
+
+
+@app.route('/api/users/<int:user_id>/myfeed', methods=['GET'])
+def get_user_myfeed(user_id):
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                f.favorite_id,
+                f.team_id,
+                t.name,
+                t.city,
+                t.abbreviation,
+                t.nba_team_id,
+                t.logo_url,
+                COALESCE(ts.wins, 0) AS wins,
+                COALESCE(ts.losses, 0) AS losses,
+                f.created_at
+            FROM favorites f
+            JOIN teams t ON f.team_id = t.team_id
+            LEFT JOIN team_standings ts ON t.team_id = ts.team_id
+            WHERE f.user_id = %s
+            ORDER BY f.created_at DESC
+            """,
+            (user_id,),
+        )
+        favorites = cursor.fetchall() or []
+        cursor.close()
+    except Error as e:
+        connection.close()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+    watchlist_rows, watchlist_error = _get_user_game_collection(user_id, 'watchlist')
+    if watchlist_error:
+        return jsonify({'error': watchlist_error}), 500
+
+    alert_rows, alert_error = _get_user_game_collection(user_id, 'alerts')
+    if alert_error:
+        return jsonify({'error': alert_error}), 500
+
+    reply_rows, reply_error = _get_user_comment_replies(user_id)
+    if reply_error:
+        return jsonify({'error': reply_error}), 500
+
+    return jsonify({
+        'favorites': favorites,
+        'watchlist': watchlist_rows,
+        'alerts': alert_rows,
+        'comment_replies': reply_rows,
+    }), 200
+
+
 # ================= HEALTH CHECK =================
 
 @app.route('/api/health', methods=['GET'])

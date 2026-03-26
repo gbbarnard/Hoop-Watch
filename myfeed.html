@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Feed | HoopWatch</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <img class="logo-img" src="HoopWatch.png" alt="HoopWatch" />
+            <span class="brand-name">HoopWatch</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="index.html">Games</a></li>
+            <li><a href="teams.html">Teams</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+            <li><a href="myfeed.html" class="active">My Feed</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <section class="hero-section myfeed-hero">
+            <h1>My Feed</h1>
+            <p>Your personalized HoopWatch activity in one place.</p>
+            <div class="myfeed-userbar">
+                <div id="myfeed-user-chip" class="myfeed-user-chip">User ID: --</div>
+                <button id="change-user-btn" class="myfeed-secondary-btn" type="button">Change User ID</button>
+            </div>
+        </section>
+
+        <section class="myfeed-grid">
+            <div class="myfeed-section-card">
+                <div class="myfeed-section-head">
+                    <div>
+                        <div class="page-kicker">Community</div>
+                        <h2>Replies to Your Comments</h2>
+                    </div>
+                    <span id="replies-count" class="myfeed-count-pill">0</span>
+                </div>
+                <div id="comment-replies-list" class="myfeed-list"></div>
+            </div>
+
+            <div class="myfeed-section-card">
+                <div class="myfeed-section-head">
+                    <div>
+                        <div class="page-kicker">Teams</div>
+                        <h2>Your Favorite Teams</h2>
+                    </div>
+                    <span id="favorites-count" class="myfeed-count-pill">0</span>
+                </div>
+                <div id="favorites-list" class="myfeed-list"></div>
+            </div>
+
+            <div class="myfeed-section-card">
+                <div class="myfeed-section-head">
+                    <div>
+                        <div class="page-kicker">Games</div>
+                        <h2>Your Watchlisted Games</h2>
+                    </div>
+                    <span id="watchlist-count" class="myfeed-count-pill">0</span>
+                </div>
+                <div id="watchlist-list" class="myfeed-list"></div>
+            </div>
+
+            <div class="myfeed-section-card">
+                <div class="myfeed-section-head">
+                    <div>
+                        <div class="page-kicker">Alerts</div>
+                        <h2>Game Alerts</h2>
+                    </div>
+                    <span id="alerts-count" class="myfeed-count-pill">0</span>
+                </div>
+                <div id="alerts-list" class="myfeed-list"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="myfeed.js"></script>
+</body>
+
+</html>

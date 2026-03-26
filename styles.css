@@ -1482,3 +1482,274 @@ body {
     line-height: 1.6;
     white-space: pre-wrap;
 }
+
+.game-watchlist-btn {
+    top: 12px;
+    right: 50px;
+}
+
+.myfeed-hero {
+    text-align: left;
+    margin-bottom: 2rem;
+}
+
+.myfeed-userbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.myfeed-user-chip,
+.myfeed-count-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #1d4ed8;
+    font-weight: 700;
+    font-size: 0.9rem;
+    border: 1px solid #dbeafe;
+}
+
+.myfeed-secondary-btn {
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: #111827;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.myfeed-secondary-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.myfeed-secondary-btn.small {
+    padding: 8px 12px;
+    font-size: 0.9rem;
+}
+
+.myfeed-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.myfeed-section-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    min-height: 280px;
+}
+
+.myfeed-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.myfeed-section-head h2 {
+    font-size: 1.2rem;
+    margin-top: 2px;
+}
+
+.myfeed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.myfeed-empty {
+    border: 1px dashed #d1d5db;
+    border-radius: 14px;
+    background: #f8fafc;
+    padding: 18px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.myfeed-team-item,
+.myfeed-reply-item,
+.myfeed-game-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    background: #ffffff;
+}
+
+.myfeed-team-item,
+.myfeed-reply-item,
+.myfeed-game-main {
+    text-decoration: none;
+    color: inherit;
+}
+
+.myfeed-team-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+}
+
+.myfeed-team-logo-wrap {
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e5e7eb;
+    flex-shrink: 0;
+}
+
+.myfeed-team-logo,
+.myfeed-team-mini-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.myfeed-team-mini-logo {
+    width: 28px;
+    height: 28px;
+}
+
+.myfeed-logo-fallback {
+    font-size: 1.4rem;
+}
+
+.myfeed-team-copy {
+    min-width: 0;
+}
+
+.myfeed-item-title {
+    font-weight: 800;
+    color: #111827;
+}
+
+.myfeed-item-subtext {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    margin-top: 4px;
+}
+
+.myfeed-game-item {
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.myfeed-game-main {
+    display: block;
+    flex: 1;
+}
+
+.myfeed-game-teams-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.myfeed-game-team-mini {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.myfeed-versus {
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.myfeed-scoreline {
+    margin-top: 6px;
+    font-size: 0.95rem;
+    color: #111827;
+}
+
+.myfeed-item-actions {
+    flex-shrink: 0;
+}
+
+.myfeed-reply-item {
+    display: block;
+    padding: 14px;
+}
+
+.myfeed-reply-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+}
+
+.myfeed-reply-date {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.myfeed-quote-block {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    font-size: 0.94rem;
+}
+
+.myfeed-quote-block.reply {
+    background: #eff6ff;
+    border-color: #dbeafe;
+}
+
+@media (max-width: 980px) {
+    .myfeed-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .myfeed-game-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .myfeed-item-actions {
+        width: 100%;
+    }
+
+    .myfeed-item-actions .myfeed-secondary-btn {
+        width: 100%;
+    }
+
+    .myfeed-reply-topline {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+
+.page-kicker {
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary-color);
+}

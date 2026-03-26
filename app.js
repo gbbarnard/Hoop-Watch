@@ -42,11 +42,11 @@ function getUserIdFromStorageOrPrompt() {
     const saved = Number(String(readSavedUserId()).trim());
     if (saved > 0) return saved;
 
-    const entered = window.prompt('Enter your demo user ID to save game alerts. Example: 2');
+    const entered = window.prompt('Enter your demo user ID to save game alerts and watchlisted games. Example: 2');
     const userId = Number(String(entered || '').trim());
 
     if (!userId || userId < 1) {
-        alert('A valid user ID is required to save alerts.');
+        alert('A valid user ID is required to save alerts and watchlisted games.');
         return null;
     }
 
@@ -71,6 +71,65 @@ function updateAlertButtonState(button, isActive) {
     button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     button.title = isActive ? 'Remove game alert' : 'Save game alert';
 }
+
+function updateWatchlistButtonState(button, isActive) {
+    if (!button) return;
+    button.classList.toggle('active', Boolean(isActive));
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    button.title = isActive ? 'Remove from watchlist' : 'Add game to watchlist';
+}
+
+async function hydrateWatchlistButtons(games) {
+    const userId = Number(String(readSavedUserId()).trim());
+    if (!userId) return;
+
+    await Promise.all((games || []).map(async (game) => {
+        const gameId = game.gameId || game.game_id || game.id || '';
+        const button = document.querySelector(`.game-watchlist-btn[data-game-id="${CSS.escape(String(gameId))}"]`);
+        if (!button || !gameId) return;
+
+        try {
+            const result = await fetchJson(`${API_URL}/api/games/${gameId}/watchlist/${userId}`);
+            updateWatchlistButtonState(button, Boolean(result.is_watchlisted));
+        } catch (error) {
+            console.error(`Could not load watchlist state for game ${gameId}:`, error);
+        }
+    }));
+}
+
+async function toggleGameWatchlistFromCard(event, gameId) {
+    event.stopPropagation();
+
+    const button = event.currentTarget;
+    const userId = getUserIdFromStorageOrPrompt();
+    if (!userId || !gameId) return;
+
+    const isActive = button.classList.contains('active');
+
+    try {
+        button.disabled = true;
+
+        if (isActive) {
+            await fetchJson(`${API_URL}/api/games/${gameId}/watchlist/${userId}`, {
+                method: 'DELETE'
+            });
+            updateWatchlistButtonState(button, false);
+        } else {
+            await fetchJson(`${API_URL}/api/games/${gameId}/watchlist`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            });
+            updateWatchlistButtonState(button, true);
+        }
+    } catch (error) {
+        alert(error.message || 'Could not update watchlist.');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+window.toggleGameWatchlistFromCard = toggleGameWatchlistFromCard;
 
 async function hydrateAlertButtons(games) {
     const userId = Number(String(readSavedUserId()).trim());
@@ -137,6 +196,7 @@ async function fetchGames() {
 
         container.innerHTML = games.map((game) => createGameCard(game)).join('');
         await hydrateAlertButtons(games);
+        await hydrateWatchlistButtons(games);
     } catch (error) {
         console.error('Error fetching games:', error);
         document.getElementById('games-container').innerHTML =
@@ -171,6 +231,16 @@ function createGameCard(game) {
     return `
         <div class="game-card" onclick="window.location.href='game-detail.html?id=${gameId}'" style="cursor: pointer;">
             <span class="game-status ${statusClass}">${statusText}</span>
+            <button
+                class="card-icon-btn game-watchlist-btn"
+                type="button"
+                data-game-id="${gameId}"
+                onclick="toggleGameWatchlistFromCard(event, '${gameId}')"
+                aria-label="Toggle game watchlist"
+                title="Add game to watchlist"
+            >
+                <span>🔖</span>
+            </button>
             <button
                 class="card-icon-btn game-alert-btn"
                 type="button"
