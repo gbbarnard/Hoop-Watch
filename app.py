@@ -1269,7 +1269,11 @@ def get_team_details(team_id):
         except Exception:
             pass
 
-        select_parts = ["t.team_id AS team_id"]
+        select_parts = [
+            "t.team_id AS team_id",
+            "ts.wins AS wins",
+            "ts.losses AS losses",
+        ]
         if "nba_team_id" in teams_cols:
             select_parts.append("t.nba_team_id AS nba_team_id")
         if "name" in teams_cols:
@@ -1285,14 +1289,15 @@ def get_team_details(team_id):
         if "arena_name" in teams_cols:
             select_parts.append("t.arena_name AS arena_name")
 
-        join_sql = ""
+        join_parts = [" LEFT JOIN team_standings ts ON ts.team_id = t.team_id "]
         if has_team_locations:
-            join_sql = " LEFT JOIN team_locations tl ON tl.team_id = t.team_id "
+            join_parts.append(" LEFT JOIN team_locations tl ON tl.team_id = t.team_id ")
             if "city" not in teams_cols:
                 select_parts.append("tl.city AS city")
             if "arena_name" not in teams_cols:
                 select_parts.append("tl.arena_name AS arena_name")
 
+        join_sql = "".join(join_parts)
         query = f"SELECT {', '.join(select_parts)} FROM teams t{join_sql} WHERE t.team_id = %s"
         cursor = connection.cursor(dictionary=True)
         cursor.execute(query, (team_id,))
@@ -1339,13 +1344,25 @@ def get_team_details(team_id):
                 "arena": row.get("arena_name"),
             }), 200
 
-        # standings
-        wins = 0
-        losses = 0
+        # standings: prefer the synced DB values from team_standings.
+        wins = row.get("wins")
+        losses = row.get("losses")
         conf_from_standings = None
-    
 
-        if wins == 0 and losses == 0:
+        if wins is not None:
+            try:
+                wins = int(wins)
+            except Exception:
+                wins = 0
+        if losses is not None:
+            try:
+                losses = int(losses)
+            except Exception:
+                losses = 0
+
+        if wins is None or losses is None:
+            wins = 0
+            losses = 0
             try:
                 standings = leaguestandings.LeagueStandings().get_dict()
                 headers = standings["resultSets"][0]["headers"]
