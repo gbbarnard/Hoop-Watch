@@ -51,6 +51,87 @@ def get_db_connection():
 
 # ================= NBA API FUNCTIONS =================
 
+
+
+def get_user_by_id(user_id):
+    connection = get_db_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT user_id, email, role FROM users WHERE user_id = %s", (user_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        return row
+    except Exception as e:
+        print(f"User lookup error: {e}")
+        return None
+    finally:
+        connection.close()
+
+
+def resolve_internal_game_id(game_identifier, create_from_live=True):
+    """Resolve either an internal game_id or nba_game_id to the internal DB game_id."""
+    connection = get_db_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT game_id, nba_game_id
+            FROM games
+            WHERE CAST(game_id AS CHAR) = %s OR nba_game_id = %s
+            LIMIT 1
+            """,
+            (str(game_identifier), str(game_identifier)),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        if row:
+            return int(row["game_id"])
+    except Exception as e:
+        print(f"Game resolve lookup error: {e}")
+    finally:
+        connection.close()
+
+    if not create_from_live:
+        return None
+
+    try:
+        for game in fetch_live_games() or []:
+            if str(game.get("gameId")) == str(game_identifier):
+                cache_game(game)
+                break
+    except Exception as e:
+        print(f"Live game backfill failed: {e}")
+
+    connection = get_db_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT game_id
+            FROM games
+            WHERE CAST(game_id AS CHAR) = %s OR nba_game_id = %s
+            LIMIT 1
+            """,
+            (str(game_identifier), str(game_identifier)),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return int(row["game_id"]) if row else None
+    except Exception as e:
+        print(f"Game resolve retry error: {e}")
+        return None
+    finally:
+        connection.close()
+
 def fetch_live_games():
     games = scoreboard.ScoreBoard()
     data = games.get_dict()
@@ -1258,33 +1339,15 @@ def get_team_details(team_id):
                 "arena": row.get("arena_name"),
             }), 200
 
-        # standings: first read the saved DB standings row that sync_standings() updates.
-        # Only fall back to nba_api if the table has no row for this team.
+        # standings
         wins = 0
         losses = 0
         conf_from_standings = None
-
-        try:
-            connection = get_db_connection()
-            if connection:
-                cursor = connection.cursor(dictionary=True)
-                cursor.execute(
-                    "SELECT wins, losses FROM team_standings WHERE team_id = %s",
-                    (int(row["team_id"]),)
-                )
-                standings_row = cursor.fetchone()
-                cursor.close()
-                connection.close()
-
-                if standings_row:
-                    wins = int(standings_row.get("wins") or 0)
-                    losses = int(standings_row.get("losses") or 0)
-        except Exception as e:
-            print("DB standings lookup failed:", e)
+    
 
         if wins == 0 and losses == 0:
             try:
-                standings = leaguestandings.LeagueStandings(headers=NBA_HEADERS, timeout=20).get_dict()
+                standings = leaguestandings.LeagueStandings().get_dict()
                 headers = standings["resultSets"][0]["headers"]
                 rows = standings["resultSets"][0]["rowSet"]
 
@@ -1901,6 +1964,335 @@ def vote_qotd_comment():
     finally:
         connection.close()
 
+
+
+# ================= FAVORITES / ALERTS / GAME COMMENTS API =================
+
+@app.route('/api/users/<int:user_id>/favorites', methods=['GET'])
+def get_user_favorites(user_id):
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                f.favorite_id,
+                f.team_id,
+                t.name,
+                t.city,
+                t.abbreviation,
+                t.nba_team_id,
+                t.logo_url,
+                f.created_at
+            FROM favorites f
+            JOIN teams t ON f.team_id = t.team_id
+            WHERE f.user_id = %s
+            ORDER BY f.created_at DESC
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+        return jsonify(rows), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/users/<int:user_id>/favorites/<int:team_id>', methods=['GET'])
+def get_favorite_status(user_id, team_id):
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT favorite_id FROM favorites WHERE user_id = %s AND team_id = %s LIMIT 1",
+            (user_id, team_id),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify({'is_favorite': bool(row)}), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/users/<int:user_id>/favorites', methods=['POST'])
+def add_user_favorite(user_id):
+    data = request.get_json(silent=True) or {}
+    team_id = data.get('team_id')
+
+    if not team_id:
+        return jsonify({'error': 'team_id is required'}), 400
+
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT team_id FROM teams WHERE team_id = %s", (team_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            return jsonify({'error': 'Team not found'}), 404
+
+        cursor.execute(
+            """
+            INSERT INTO favorites (user_id, team_id, created_at)
+            VALUES (%s, %s, NOW())
+            ON DUPLICATE KEY UPDATE created_at = created_at
+            """,
+            (user_id, team_id),
+        )
+        connection.commit()
+        cursor.close()
+        return jsonify({'message': 'Favorite team saved'}), 201
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/users/<int:user_id>/favorites/<int:team_id>', methods=['DELETE'])
+def remove_user_favorite(user_id, team_id):
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM favorites WHERE user_id = %s AND team_id = %s",
+            (user_id, team_id),
+        )
+        connection.commit()
+        deleted = cursor.rowcount
+        cursor.close()
+        if deleted == 0:
+            return jsonify({'error': 'Favorite team not found'}), 404
+        return jsonify({'message': 'Favorite team removed'}), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/comments', methods=['GET'])
+def get_game_comments(game_identifier):
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                gc.comment_id,
+                gc.game_id,
+                gc.user_id,
+                gc.parent_comment_id,
+                gc.comment_text,
+                gc.created_at,
+                COALESCE(u.email, CONCAT('User ', u.user_id)) AS user_name
+            FROM game_comments gc
+            JOIN users u ON gc.user_id = u.user_id
+            WHERE gc.game_id = %s
+            ORDER BY gc.created_at ASC
+            """,
+            (internal_game_id,),
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+        return jsonify(rows), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/comments', methods=['POST'])
+def post_game_comment(game_identifier):
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    comment_text = (data.get('comment_text') or '').strip()
+    parent_comment_id = data.get('parent_comment_id')
+
+    if not user_id or not comment_text:
+        return jsonify({'error': 'user_id and comment_text are required'}), 400
+
+    if len(comment_text) > 500:
+        return jsonify({'error': 'Comment must be 500 characters or less'}), 400
+
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if parent_comment_id:
+            cursor.execute(
+                "SELECT comment_id FROM game_comments WHERE comment_id = %s AND game_id = %s LIMIT 1",
+                (parent_comment_id, internal_game_id),
+            )
+            if not cursor.fetchone():
+                cursor.close()
+                return jsonify({'error': 'Parent comment not found for this game'}), 404
+
+        cursor.close()
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO game_comments (user_id, game_id, parent_comment_id, comment_text, created_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            """,
+            (user_id, internal_game_id, parent_comment_id, comment_text),
+        )
+        connection.commit()
+        new_id = cursor.lastrowid
+        cursor.close()
+        return jsonify({'message': 'Game comment added', 'comment_id': new_id}), 201
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/alerts/<int:user_id>', methods=['GET'])
+def get_game_alert_status(game_identifier, user_id):
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT alert_rule_id, rule_type
+            FROM alert_rules
+            WHERE user_id = %s AND game_id = %s AND rule_type = 'game_start'
+            LIMIT 1
+            """,
+            (user_id, internal_game_id),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify({'has_alert': bool(row), 'rule_type': 'game_start'}), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/alerts', methods=['POST'])
+def add_game_alert(game_identifier):
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+
+    if not get_user_by_id(user_id):
+        return jsonify({'error': 'User not found'}), 404
+
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT alert_rule_id
+            FROM alert_rules
+            WHERE user_id = %s AND game_id = %s AND rule_type = 'game_start'
+            LIMIT 1
+            """,
+            (user_id, internal_game_id),
+        )
+        existing = cursor.fetchone()
+        cursor.close()
+
+        if existing:
+            return jsonify({'message': 'Game alert already exists'}), 200
+
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO alert_rules (user_id, game_id, team_id, rule_type, created_at)
+            VALUES (%s, %s, NULL, 'game_start', NOW())
+            """,
+            (user_id, internal_game_id),
+        )
+        connection.commit()
+        cursor.close()
+        return jsonify({'message': 'Game alert saved'}), 201
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/games/<game_identifier>/alerts/<int:user_id>', methods=['DELETE'])
+def remove_game_alert(game_identifier, user_id):
+    internal_game_id = resolve_internal_game_id(game_identifier)
+    if not internal_game_id:
+        return jsonify({'error': 'Game not found in database'}), 404
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM alert_rules WHERE user_id = %s AND game_id = %s AND rule_type = 'game_start'",
+            (user_id, internal_game_id),
+        )
+        connection.commit()
+        deleted = cursor.rowcount
+        cursor.close()
+        if deleted == 0:
+            return jsonify({'error': 'Game alert not found'}), 404
+        return jsonify({'message': 'Game alert removed'}), 200
+    except Error as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        connection.close()
+
+
 # ================= HEALTH CHECK =================
 
 @app.route('/api/health', methods=['GET'])
@@ -1942,3 +2334,4 @@ if __name__ == '__main__':
     print("POST /api/qotd/vote")
 
     app.run(debug=True, port=8000)
+    

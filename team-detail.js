@@ -1,6 +1,6 @@
 const API_BASE = "http://localhost:8000";
+const USER_ID_STORAGE_KEY = 'hoopwatch_user_id';
 
-// Official NBA logo + headshot CDN
 function logoUrl(teamId) {
   return `https://cdn.nba.com/logos/nba/${teamId}/primary/L/logo.svg`;
 }
@@ -13,10 +13,97 @@ function getTeamId() {
   return params.get("id");
 }
 
-async function fetchJson(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+function readSavedUserId() {
+  return localStorage.getItem(USER_ID_STORAGE_KEY) || '';
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || data?.message || `${res.status} ${res.statusText}`);
+  return data;
+}
+
+const favoriteUserInput = document.getElementById('favorite-user-id');
+const favoriteTeamBtn = document.getElementById('favorite-team-btn');
+const favoriteTeamStatus = document.getElementById('favorite-team-status');
+const favoriteTeamLabel = document.getElementById('favorite-team-label');
+
+let currentTeam = null;
+let isFavorite = false;
+
+function getFavoriteUserIdOrWarn() {
+  const value = Number(String(favoriteUserInput.value || '').trim());
+  if (!value || value < 1) {
+    alert('Enter a valid user ID first. Example: 2');
+    favoriteUserInput.focus();
+    return null;
+  }
+  localStorage.setItem(USER_ID_STORAGE_KEY, String(value));
+  return value;
+}
+
+function updateFavoriteButton() {
+  favoriteTeamBtn.textContent = isFavorite ? 'Favorited' : 'Add Favorite';
+  favoriteTeamBtn.classList.toggle('active', isFavorite);
+
+  if (!currentTeam) {
+    favoriteTeamLabel.textContent = 'Save this team';
+    favoriteTeamStatus.textContent = 'Use the button to add this team to favorites.';
+    return;
+  }
+
+  favoriteTeamLabel.textContent = currentTeam.full_name || currentTeam.name || 'This team';
+  favoriteTeamStatus.textContent = isFavorite
+    ? 'This team is already saved to favorites for your user ID.'
+    : 'Use the button to add this team to favorites.';
+}
+
+async function refreshFavoriteStatus() {
+  if (!currentTeam) return;
+
+  const userId = Number(String(favoriteUserInput.value || '').trim());
+  if (!userId) {
+    isFavorite = false;
+    updateFavoriteButton();
+    return;
+  }
+
+  try {
+    const result = await fetchJson(`${API_BASE}/api/users/${userId}/favorites/${currentTeam.id}`);
+    isFavorite = Boolean(result.is_favorite);
+  } catch (error) {
+    console.error('Could not load favorite status:', error);
+    isFavorite = false;
+  }
+
+  updateFavoriteButton();
+}
+
+async function toggleFavoriteTeam() {
+  if (!currentTeam) return;
+  const userId = getFavoriteUserIdOrWarn();
+  if (!userId) return;
+
+  try {
+    favoriteTeamBtn.disabled = true;
+    if (isFavorite) {
+      await fetchJson(`${API_BASE}/api/users/${userId}/favorites/${currentTeam.id}`, { method: 'DELETE' });
+      isFavorite = false;
+    } else {
+      await fetchJson(`${API_BASE}/api/users/${userId}/favorites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: currentTeam.id })
+      });
+      isFavorite = true;
+    }
+    updateFavoriteButton();
+  } catch (error) {
+    alert(error.message || 'Could not update favorite team.');
+  } finally {
+    favoriteTeamBtn.disabled = false;
+  }
 }
 
 async function fetchTeamData() {
@@ -26,8 +113,6 @@ async function fetchTeamData() {
     return;
   }
 
-  // The app primarily uses INTERNAL DB ids in URLs (1..30-ish),
-  // but users sometimes paste NBA ids (16106127xx). We support both.
   const isLikelyNbaId = /^\d{9,}$/.test(String(rawId)) && Number(rawId) > 1600000000;
 
   const tbody = document.getElementById("roster-tbody");
@@ -37,9 +122,10 @@ async function fetchTeamData() {
 
   let internalId = rawId;
   try {
-    // Try direct (works for internal ids)
     const team = await fetchJson(`${API_BASE}/api/teams/${internalId}`);
+    currentTeam = team;
     await displayTeamHeader(team);
+    await refreshFavoriteStatus();
 
     try {
       const players = await fetchJson(`${API_BASE}/api/teams/${internalId}/players`);
@@ -52,7 +138,6 @@ async function fetchTeamData() {
     }
 
   } catch (error) {
-    // If user pasted an NBA id, resolve it to the internal DB id via /api/teams list.
     if (isLikelyNbaId) {
       try {
         const allTeams = await fetchJson(`${API_BASE}/api/teams`);
@@ -63,7 +148,9 @@ async function fetchTeamData() {
         if (match && match.id) {
           internalId = match.id;
           const team = await fetchJson(`${API_BASE}/api/teams/${internalId}`);
+          currentTeam = team;
           await displayTeamHeader(team);
+          await refreshFavoriteStatus();
 
           try {
             const players = await fetchJson(`${API_BASE}/api/teams/${internalId}/players`);
@@ -94,8 +181,7 @@ async function loadFirstWorkingImage(urls) {
     if (!url) continue;
     const ok = await new Promise((resolve) => {
       const test = new Image();
-      // Avoid some hotlink/referrer issues on certain networks
-      try { test.referrerPolicy = "no-referrer"; } catch (e) {}
+      try { test.referrerPolicy = "no-referrer"; } catch (e) { }
       test.onload = () => resolve(true);
       test.onerror = () => resolve(false);
       test.src = url;
@@ -110,18 +196,15 @@ function buildLogoCandidates(team) {
   const abbr = team.abbreviation || team.abbrev || "";
   const candidates = [];
 
-  // If backend already provided a logo url, try it first.
   if (team.logo_url) candidates.push(team.logo_url);
 
   if (nbaId) {
-    // "global" tends to be the most reliable path, but keep primary as fallback.
     candidates.push(`https://cdn.nba.com/logos/nba/${nbaId}/global/L/logo.svg`);
     candidates.push(`https://cdn.nba.com/logos/nba/${nbaId}/global/L/logo.png`);
     candidates.push(`https://cdn.nba.com/logos/nba/${nbaId}/primary/L/logo.svg`);
     candidates.push(`https://cdn.nba.com/logos/nba/${nbaId}/primary/L/logo.png`);
   }
 
-  // Local fallbacks (only work if those files exist in your project)
   if (abbr) {
     candidates.push(`database/static/Logos/${abbr}.png`);
     candidates.push(`static/Logos/${abbr}.png`);
@@ -144,37 +227,31 @@ async function displayTeamHeader(team) {
     fallback.style.display = "inline";
   };
 
-  // Build candidate urls and pick the first one that actually loads.
   const candidates = buildLogoCandidates(team);
   const chosen = await loadFirstWorkingImage(candidates);
 
   if (chosen) {
-    // Set handlers BEFORE setting src (covers cached + async decoding)
     img.onerror = () => showFallback();
     img.onload = () => showImg();
-
-    // Some browsers won't fire onload for cached images reliably if we keep display:none.
-    // Set src, then if it's already complete, show immediately.
     img.src = chosen;
-
-    // If cached, show immediately
     if (img.complete && img.naturalWidth > 0) showImg();
-    else showImg(); // show container even while decoding
+    else showImg();
   } else {
     showFallback();
   }
 
   document.getElementById('team-arena').textContent = team.arena ? `Arena: ${team.arena}` : 'Arena: Arena TBD';
   document.getElementById("team-name").textContent = team.full_name || team.name || "Team";
-  document.getElementById("team-record").textContent = `${team.wins ?? 0}W - ${team.losses ?? 0}L`;
 
   const wins = Number(team.wins || 0);
   const losses = Number(team.losses || 0);
   const winRate = wins + losses > 0 ? ((wins / (wins + losses)) * 100).toFixed(1) : "0.0";
-  document.getElementById("team-win-rate").textContent = `Win Rate: ${winRate}%`;
+
+  const teamRecordPill = document.getElementById('team-record-pill');
+  const teamWinRatePill = document.getElementById('team-win-rate-pill');
+  if (teamRecordPill) teamRecordPill.textContent = `${wins}W - ${losses}L`;
+  if (teamWinRatePill) teamWinRatePill.textContent = `Win Rate: ${winRate}%`;
 }
-
-
 
 function displayRoster(players) {
   const tbody = document.getElementById("roster-tbody");
@@ -204,4 +281,13 @@ function displayRoster(players) {
   });
 }
 
+favoriteUserInput.value = readSavedUserId();
+favoriteUserInput.addEventListener('change', () => {
+  if (favoriteUserInput.value) {
+    localStorage.setItem(USER_ID_STORAGE_KEY, favoriteUserInput.value);
+  }
+  refreshFavoriteStatus();
+});
+favoriteTeamBtn.addEventListener('click', toggleFavoriteTeam);
+updateFavoriteButton();
 fetchTeamData();
