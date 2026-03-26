@@ -1645,50 +1645,75 @@ def get_game_detail(game_id):
         except Exception as e:
             print("Arena lookup failed:", e)
         
-        # Helper function to convert ISO duration to minutes
-        def parse_minutes(iso_duration):
+        # Helper function to convert ISO duration to minutes/seconds
+        def parse_seconds(iso_duration):
             if not iso_duration or iso_duration == 'PT00M00.00S':
-                return '0:00'
-            # Parse PT06M47.00S format
-            import re
-            match = re.match(r'PT(\d+)M([\d.]+)S', iso_duration)
+                return 0
+            match = re.match(r'PT(?:(\d+)M)?([\d.]+)S', iso_duration)
             if match:
-                mins = int(match.group(1))
-                secs = int(float(match.group(2)))
-                return f'{mins}:{secs:02d}'
-            return '0:00'
+                mins = int(match.group(1) or 0)
+                secs = int(float(match.group(2) or 0))
+                return mins * 60 + secs
+            return 0
+
+        def parse_minutes(iso_duration):
+            total_seconds = parse_seconds(iso_duration)
+            mins = total_seconds // 60
+            secs = total_seconds % 60
+            return f'{mins}:{secs:02d}'
         
         # Process player stats
         def process_players(team_data):
             players = []
             for player in team_data.get('players', []):
-                if player.get('played') == '1':  # Only include players who played
-                    stats = player.get('statistics', {})
-                    players.append({
-                        'name': player.get('name', ''),
-                        'nameI': player.get('nameI', ''),
-                        'position': player.get('position', ''),
-                        'jerseyNum': player.get('jerseyNum', ''),
-                        'starter': player.get('starter', '') == '1',
-                        'minutes': parse_minutes(stats.get('minutes', 'PT00M00.00S')),
-                        'points': stats.get('points', 0),
-                        'rebounds': stats.get('reboundsTotal', 0),
-                        'assists': stats.get('assists', 0),
-                        'steals': stats.get('steals', 0),
-                        'blocks': stats.get('blocks', 0),
-                        'turnovers': stats.get('turnovers', 0),
-                        'fouls': stats.get('foulsPersonal', 0),
-                        'fgm': stats.get('fieldGoalsMade', 0),
-                        'fga': stats.get('fieldGoalsAttempted', 0),
-                        'fg_pct': stats.get('fieldGoalsPercentage', 0),
-                        'fg3m': stats.get('threePointersMade', 0),
-                        'fg3a': stats.get('threePointersAttempted', 0),
-                        'fg3_pct': stats.get('threePointersPercentage', 0),
-                        'ftm': stats.get('freeThrowsMade', 0),
-                        'fta': stats.get('freeThrowsAttempted', 0),
-                        'ft_pct': stats.get('freeThrowsPercentage', 0),
-                        'plusMinus': stats.get('plusMinusPoints', 0)
-                    })
+                stats = player.get('statistics', {}) or {}
+                raw_minutes = stats.get('minutes', 'PT00M00.00S')
+                seconds = parse_seconds(raw_minutes)
+
+                players.append({
+                    'name': player.get('name', ''),
+                    'nameI': player.get('nameI', ''),
+                    'position': player.get('position', ''),
+                    'jerseyNum': player.get('jerseyNum', ''),
+                    'starter': player.get('starter', '') == '1',
+                    'played': player.get('played', '0') == '1',
+                    'minutes': parse_minutes(raw_minutes),
+                    'points': int(stats.get('points') or 0),
+                    'rebounds': int(stats.get('reboundsTotal') or 0),
+                    'assists': int(stats.get('assists') or 0),
+                    'steals': int(stats.get('steals') or 0),
+                    'blocks': int(stats.get('blocks') or 0),
+                    'turnovers': int(stats.get('turnovers') or 0),
+                    'fouls': int(stats.get('foulsPersonal') or 0),
+                    'fgm': int(stats.get('fieldGoalsMade') or 0),
+                    'fga': int(stats.get('fieldGoalsAttempted') or 0),
+                    'fg_pct': float(stats.get('fieldGoalsPercentage') or 0),
+                    'fg3m': int(stats.get('threePointersMade') or 0),
+                    'fg3a': int(stats.get('threePointersAttempted') or 0),
+                    'fg3_pct': float(stats.get('threePointersPercentage') or 0),
+                    'ftm': int(stats.get('freeThrowsMade') or 0),
+                    'fta': int(stats.get('freeThrowsAttempted') or 0),
+                    'ft_pct': float(stats.get('freeThrowsPercentage') or 0),
+                    'plusMinus': int(stats.get('plusMinusPoints') or 0),
+                    'statistics': {
+                        'seconds': seconds,
+                        'minutesCalculated': seconds,
+                        'points': int(stats.get('points') or 0),
+                        'fieldGoalsMade': int(stats.get('fieldGoalsMade') or 0),
+                        'fieldGoalsAttempted': int(stats.get('fieldGoalsAttempted') or 0),
+                        'threePointersMade': int(stats.get('threePointersMade') or 0),
+                        'threePointersAttempted': int(stats.get('threePointersAttempted') or 0),
+                        'freeThrowsMade': int(stats.get('freeThrowsMade') or 0),
+                        'freeThrowsAttempted': int(stats.get('freeThrowsAttempted') or 0),
+                        'reboundsTotal': int(stats.get('reboundsTotal') or 0),
+                        'assists': int(stats.get('assists') or 0),
+                        'steals': int(stats.get('steals') or 0),
+                        'blocks': int(stats.get('blocks') or 0),
+                        'turnovers': int(stats.get('turnovers') or 0),
+                        'foulsPersonal': int(stats.get('foulsPersonal') or 0),
+                        'plusMinusPoints': int(stats.get('plusMinusPoints') or 0),
+                    }
+                })
             return players
         
         # Process team stats
@@ -1785,6 +1810,11 @@ def get_game_detail(game_id):
                 team_stats['fg_pct'] = round((rebuilt['fgm'] / rebuilt['fga']) * 100, 1) if rebuilt['fga'] > 0 else 0
                 team_stats['fg3_pct'] = round((rebuilt['fg3m'] / rebuilt['fg3a']) * 100, 1) if rebuilt['fg3a'] > 0 else 0
                 team_stats['ft_pct'] = round((rebuilt['ftm'] / rebuilt['fta']) * 100, 1) if rebuilt['fta'] > 0 else 0
+
+            team_stats['reb'] = team_stats['rebounds']
+            team_stats['ast'] = team_stats['assists']
+            team_stats['stl'] = team_stats['steals']
+            team_stats['blk'] = team_stats['blocks']
 
             return team_stats
 
