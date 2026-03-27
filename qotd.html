@@ -1,74 +1,79 @@
 <!DOCTYPE html>
 
 <html lang="en">
+
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>QOTD | HoopWatch</title>
-<link href="styles.css" rel="stylesheet"/>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>QOTD | HoopWatch</title>
+  <link href="styles.css" rel="stylesheet" />
 </head>
+
 <body>
-<nav class="navbar">
-<div class="nav-brand">
-<img alt="HoopWatch" class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png"/>
-<span class="brand-name">HoopWatch</span>
-</div>
-<ul class="nav-menu">
-<li><a href="index.html">Games</a></li>
-<li><a href="teams.html">Teams</a></li>
-<li><a class="active" href="qotd.html">QOTD</a></li>
-</ul>
-</nav>
-<main class="container">
-<div class="hero-section" style="text-align:center;">
-<h1>Question of the Day</h1>
-<p>Answer today’s prompt and reply to others.</p>
-</div>
-<div class="qotd-page">
-<div class="qotd-shell">
-<div class="qotd-topbar">
-<div class="qotd-date-wrap" style="min-width:240px;">
-<label for="dateSelector">Pick a date</label>
-<input id="dateSelector" type="date"/>
-</div>
-</div>
-<div id="questionContainer"></div>
-</div>
-</div>
-</main>
-<script>
-const dateInput = document.getElementById("dateSelector");
-const today = new Date().toISOString().split("T")[0];
-dateInput.value = today;
+  <nav class="navbar">
+    <div class="nav-brand">
+      <img alt="HoopWatch" class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png" />
+      <span class="brand-name">HoopWatch</span>
+    </div>
+    <ul class="nav-menu">
+      <li><a href="index.html">Games</a></li>
+      <li><a href="teams.html">Teams</a></li>
+      <li><a href="myfeed.html">My Feed</a></li>
+      <li><a class="active" href="qotd.html">QOTD</a></li>
+    </ul>
+  </nav>
+  <main class="container">
+    <div class="hero-section" style="text-align:center;">
+      <h1>Question of the Day</h1>
+      <p>Answer today’s prompt and reply to others.</p>
+    </div>
+    <div class="qotd-page">
+      <div class="qotd-shell">
+        <div class="qotd-topbar">
+          <div class="qotd-date-wrap" style="min-width:240px;">
+            <label for="dateSelector">Pick a date</label>
+            <input id="dateSelector" type="date" />
+          </div>
+        </div>
+        <div id="questionContainer"></div>
+      </div>
+    </div>
+  </main>
+  <script>
+    const dateInput = document.getElementById("dateSelector");
+    const params = new URLSearchParams(window.location.search);
+    const today = new Date().toISOString().split("T")[0];
+    const requestedDate = params.get("date");
+    dateInput.value = requestedDate || today;
 
-let currentQuestionId = null;
-let allComments = [];
+    let currentQuestionId = null;
+    let allComments = [];
 
-dateInput.addEventListener("change", loadQuestion);
+    dateInput.addEventListener("change", loadQuestion);
 
-function getMainUserId() {
-  const el = document.getElementById("userId");
-  const v = el ? el.value.trim() : "";
-  return v ? parseInt(v, 10) : null;
-}
+    function getMainUserId() {
+      const el = document.getElementById("userId");
+      const v = el ? el.value.trim() : "";
+      return v ? parseInt(v, 10) : null;
+    }
 
-async function loadQuestion() {
-  const date = dateInput.value;
+    async function loadQuestion() {
+      const date = dateInput.value;
 
-  const res = await fetch(`http://localhost:8000/api/qotd/${date}`);
-  const question = await res.json();
+      const res = await fetch(`http://localhost:8000/api/qotd/${date}`);
+      const question = await res.json();
 
-  const container = document.getElementById("questionContainer");
-  container.innerHTML = "";
+      const container = document.getElementById("questionContainer");
+      container.innerHTML = "";
 
-  if (!question || !question.question_id) {
-    container.innerHTML = `<div class="qotd-empty"><p class="no-question">No question for this date.</p></div>`;
-    return;
-  }
+      if (!question || !question.question_id) {
+        container.innerHTML = `<div class="qotd-empty"><p class="no-question">No question for this date.</p></div>`;
+        return;
+      }
 
-  currentQuestionId = question.question_id;
+      currentQuestionId = question.question_id;
 
-  container.innerHTML = `
+      container.innerHTML = `
     <div class="qotd-card">
       <h2 class="qotd-question">${question.question_text}</h2>
 
@@ -82,54 +87,54 @@ async function loadQuestion() {
     </div>
   `;
 
-  loadComments();
-}
+      loadComments();
+    }
 
-async function loadComments() {
-  const container = document.getElementById("comments");
-  if (!container) return;
+    async function loadComments() {
+      const container = document.getElementById("comments");
+      if (!container) return;
 
-  const res = await fetch(`http://localhost:8000/api/qotd/${currentQuestionId}/comments`);
-  if (!res.ok) {
-    container.innerHTML = `<p class="qotd-empty">Could not load comments.</p>`;
-    return;
-  }
+      const res = await fetch(`http://localhost:8000/api/qotd/${currentQuestionId}/comments`);
+      if (!res.ok) {
+        container.innerHTML = `<p class="qotd-empty">Could not load comments.</p>`;
+        return;
+      }
 
-  allComments = await res.json();
-  renderComments();
-}
+      allComments = await res.json();
+      renderComments();
+    }
 
-function renderComments() {
-  const container = document.getElementById("comments");
-  container.innerHTML = "";
+    function renderComments() {
+      const container = document.getElementById("comments");
+      container.innerHTML = "";
 
-  const topLevel = allComments.filter(c => !c.parent_comment_id);
+      const topLevel = allComments.filter(c => !c.parent_comment_id);
 
-  if (!topLevel.length) {
-    container.innerHTML = `<p class="qotd-empty">No comments yet.</p>`;
-    return;
-  }
+      if (!topLevel.length) {
+        container.innerHTML = `<p class="qotd-empty">No comments yet.</p>`;
+        return;
+      }
 
-  topLevel.forEach(comment => {
-    container.appendChild(createCommentElement(comment, false));
-  });
-}
+      topLevel.forEach(comment => {
+        container.appendChild(createCommentElement(comment, false));
+      });
+    }
 
-function safeCount(v) {
-  if (v === null || v === undefined) return 0;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
+    function safeCount(v) {
+      if (v === null || v === undefined) return 0;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    }
 
-function createCommentElement(comment, isReply) {
-  const div = document.createElement("div");
-  div.className = isReply ? "qotd-reply" : "qotd-comment";
+    function createCommentElement(comment, isReply) {
+      const div = document.createElement("div");
+      div.className = isReply ? "qotd-reply" : "qotd-comment";
 
-  const up = safeCount(comment.upvotes);
-  const down = safeCount(comment.downvotes);
-  const who = (comment.user_name && String(comment.user_name).trim()) ? comment.user_name : comment.user_id;
+      const up = safeCount(comment.upvotes);
+      const down = safeCount(comment.downvotes);
+      const who = (comment.user_name && String(comment.user_name).trim()) ? comment.user_name : comment.user_id;
 
-  div.innerHTML = `
+      div.innerHTML = `
     <div class="qotd-comment-header">${who}</div>
     <p class="qotd-comment-text">${comment.comment_text}</p>
 
@@ -142,115 +147,116 @@ function createCommentElement(comment, isReply) {
     <div class="replies"></div>
   `;
 
-  const repliesContainer = div.querySelector(".replies");
-  const replies = allComments.filter(c => c.parent_comment_id === comment.comment_id);
+      const repliesContainer = div.querySelector(".replies");
+      const replies = allComments.filter(c => c.parent_comment_id === comment.comment_id);
 
-  replies.forEach(reply => {
-    repliesContainer.appendChild(createCommentElement(reply, true));
-  });
+      replies.forEach(reply => {
+        repliesContainer.appendChild(createCommentElement(reply, true));
+      });
 
-  return div;
-}
+      return div;
+    }
 
-function showReplyBox(parentId, button) {
-  const root = button.closest(".qotd-comment, .qotd-reply");
-  if (!root) return;
+    function showReplyBox(parentId, button) {
+      const root = button.closest(".qotd-comment, .qotd-reply");
+      if (!root) return;
 
-  // Prevent duplicate reply boxes
-  const existing = root.querySelector(".reply-box");
-  if (existing) return;
+      // Prevent duplicate reply boxes
+      const existing = root.querySelector(".reply-box");
+      if (existing) return;
 
-  const replyBox = document.createElement("div");
-  replyBox.className = "reply-box";
-  replyBox.innerHTML = `
+      const replyBox = document.createElement("div");
+      replyBox.className = "reply-box";
+      replyBox.innerHTML = `
     <input type="number" placeholder="Your user ID" class="replyUser">
     <textarea rows="2" placeholder="Write reply..." class="replyText"></textarea>
     <button class="reply-btn" onclick="submitReply(${parentId}, this)">Post Reply</button>
   `;
 
-  root.appendChild(replyBox);
-}
-
-async function submitReply(parentId, button) {
-  const box = button.parentElement;
-  const userId = box.querySelector(".replyUser").value;
-  const text = box.querySelector(".replyText").value;
-
-  if (!userId || !text) {
-    alert("Fill out both fields");
-    return;
-  }
-
-  await postComment(parentId, userId, text);
-
-  // Remove the reply box after posting
-  box.remove();
-}
-
-async function postComment(parentId, customUser = null, customText = null) {
-  const userId = customUser || (document.getElementById("userId") ? document.getElementById("userId").value : "");
-  const commentText = customText || (document.getElementById("commentText") ? document.getElementById("commentText").value : "");
-
-  if (!userId || !commentText) {
-    alert("Fill out both fields");
-    return;
-  }
-
-  const res = await fetch("http://localhost:8000/api/qotd/comment", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      question_id: currentQuestionId,
-      user_id: parseInt(userId, 10),
-      parent_comment_id: parentId,
-      comment_text: commentText
-    })
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert("Error: " + (err.error || "Failed to post"));
-    return;
-  }
-
-  const mainBox = document.getElementById("commentText");
-  if (mainBox) mainBox.value = "";
-
-  loadComments();
-}
-
-async function voteComment(commentId, vote) {
-  let userId = getMainUserId();
-  if (!userId) {
-    const entered = prompt("Enter your user ID for voting:");
-    if (!entered) return;
-    userId = parseInt(entered, 10);
-    if (!Number.isFinite(userId)) {
-      alert("Invalid user ID");
-      return;
+      root.appendChild(replyBox);
     }
-  }
 
-  const res = await fetch("http://localhost:8000/api/qotd/vote", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      comment_id: commentId,
-      user_id: userId,
-      vote_value: vote
-    })
-  });
+    async function submitReply(parentId, button) {
+      const box = button.parentElement;
+      const userId = box.querySelector(".replyUser").value;
+      const text = box.querySelector(".replyText").value;
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert("Error: " + (err.error || "Failed to vote"));
-    return;
-  }
+      if (!userId || !text) {
+        alert("Fill out both fields");
+        return;
+      }
 
-  loadComments();
-}
+      await postComment(parentId, userId, text);
 
-loadQuestion();
-</script>
+      // Remove the reply box after posting
+      box.remove();
+    }
+
+    async function postComment(parentId, customUser = null, customText = null) {
+      const userId = customUser || (document.getElementById("userId") ? document.getElementById("userId").value : "");
+      const commentText = customText || (document.getElementById("commentText") ? document.getElementById("commentText").value : "");
+
+      if (!userId || !commentText) {
+        alert("Fill out both fields");
+        return;
+      }
+
+      const res = await fetch("http://localhost:8000/api/qotd/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question_id: currentQuestionId,
+          user_id: parseInt(userId, 10),
+          parent_comment_id: parentId,
+          comment_text: commentText
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Error: " + (err.error || "Failed to post"));
+        return;
+      }
+
+      const mainBox = document.getElementById("commentText");
+      if (mainBox) mainBox.value = "";
+
+      loadComments();
+    }
+
+    async function voteComment(commentId, vote) {
+      let userId = getMainUserId();
+      if (!userId) {
+        const entered = prompt("Enter your user ID for voting:");
+        if (!entered) return;
+        userId = parseInt(entered, 10);
+        if (!Number.isFinite(userId)) {
+          alert("Invalid user ID");
+          return;
+        }
+      }
+
+      const res = await fetch("http://localhost:8000/api/qotd/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          comment_id: commentId,
+          user_id: userId,
+          vote_value: vote
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Error: " + (err.error || "Failed to vote"));
+        return;
+      }
+
+      loadComments();
+    }
+
+    loadQuestion();
+  </script>
 </body>
+
 </html>

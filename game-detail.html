@@ -11,9 +11,17 @@
         <div class="nav-content">
             <a href="index.html" class="logo">
                 <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
-                <span>HoopWatch</span>
+                <span>HoopWatch</span><br>
+                <a href="index.html" class="back-link">← Back to Games</a
             </a>
         </div>
+
+        <ul class="nav-menu">
+            <li><a href="index.html" class="active">Games</a></li>
+            <li><a href="teams.html">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+        </ul>
     </nav>
 
     <main class="container">
@@ -26,13 +34,11 @@
                         <div id="away-score" class="score"></div>
                     </div>
                 </div>
-                
                 <div class="game-status-center">
                     <div id="game-status" class="game-status-text"></div>
                     <div id="game-time" class="game-time"></div>
                     <div id="game-arena" class="game-arena"></div>
                 </div>
-                
                 <div class="team-score home-team-score">
                     <div class="team-info">
                         <h2 id="home-team-name"></h2>
@@ -41,7 +47,6 @@
                     <img id="home-logo" class="team-logo-large" alt="Home Team">
                 </div>
             </div>
-            
             <div id="quarter-scores" class="quarter-scores"></div>
         </div>
 
@@ -63,8 +68,21 @@
                 </div>
             </div>
         </div>
+
+        <section class="game-comments-shot-card">
+            <h3 class="game-comments-shot-title">Game Comments</h3>
+            <input id="comment-display-name" class="game-comments-shot-input" type="text" maxlength="40"
+                placeholder="Name (optional)">
+            <textarea id="game-comment-text" class="game-comments-shot-textarea" rows="4"
+                placeholder="Leave a comment about this game..."></textarea>
+            <button id="post-game-comment-btn" class="game-comments-shot-button" type="button">Post Comment</button>
+            <div id="game-comments-list" class="game-comments-shot-list">
+                <div class="loading">Loading comments...</div>
+            </div>
+        </section>
     </main>
 
     <script src="game-detail.js"></script>
 </body>
+
 </html>

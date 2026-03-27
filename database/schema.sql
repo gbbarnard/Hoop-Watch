@@ -15,27 +15,18 @@ CREATE TABLE users (
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- ---------- TEAMS + LOCATIONS ----------
+
 CREATE TABLE teams (
   team_id       INT AUTO_INCREMENT PRIMARY KEY,
-  nba_team_id   VARCHAR(32) NULL UNIQUE,     -- keep for later API mapping, optional now
+  nba_team_id   VARCHAR(32) NULL UNIQUE,
   name          VARCHAR(120) NOT NULL,
   abbreviation  VARCHAR(10) NOT NULL UNIQUE,
   conference    ENUM('East','West') NOT NULL,
-  logo_url      VARCHAR(500) NULL
-) ENGINE=InnoDB;
-
-CREATE TABLE team_locations (
-  location_id   INT AUTO_INCREMENT PRIMARY KEY,
-  team_id       INT NOT NULL UNIQUE,
+  logo_url      VARCHAR(500) NULL,
   city          VARCHAR(80) NOT NULL,
   state         VARCHAR(40) NULL,
   country       VARCHAR(60) NOT NULL DEFAULT 'USA',
-  arena_name    VARCHAR(120) NULL,
-  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_team_locations_team
-    FOREIGN KEY (team_id) REFERENCES teams(team_id)
-    ON DELETE CASCADE ON UPDATE CASCADE
+  arena_name    VARCHAR(120) NULL
 ) ENGINE=InnoDB;
 
 -- ---------- PLAYERS ----------

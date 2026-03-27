@@ -1,155 +1,155 @@
 /* Basic reset and base styles */
 * {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background: #f6f7fb;
-  color: #1f2937;
-  line-height: 1.5;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #f6f7fb;
+    color: #1f2937;
+    line-height: 1.5;
 }
 
 header {
-  background: #111827;
-  color: #ffffff;
-  padding: 24px 16px;
+    background: #111827;
+    color: #ffffff;
+    padding: 24px 16px;
 }
 
 header h1 {
-  font-size: 24px;
-  font-weight: 600;
+    font-size: 24px;
+    font-weight: 600;
 }
 
 .header-brand {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 
 .brand-logo {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
 }
 
 .brand-title {
-  font-size: 28px;
-  letter-spacing: 0.5px;
+    font-size: 28px;
+    letter-spacing: 0.5px;
 }
 
 .container {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px 16px 48px;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
 }
 
 /* Teams card layout */
 .teams-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
 }
 
 .team-card {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  text-decoration: none;
-  color: inherit;
-  display: block;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+    display: block;
 }
 
 .team-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 
 .team-card h2 {
-  font-size: 18px;
-  margin-bottom: 6px;
+    font-size: 18px;
+    margin-bottom: 6px;
 }
 
 .team-card p {
-  font-size: 14px;
-  color: #4b5563;
+    font-size: 14px;
+    color: #4b5563;
 }
 
 /* Team detail page */
 .team-summary {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-  margin-bottom: 24px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    margin-bottom: 24px;
 }
 
 .summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
 }
 
 .summary-item {
-  background: #f3f4f6;
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 14px;
+    background: #f3f4f6;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 14px;
 }
 
 /* Players table */
 .table-wrapper {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
 .players-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
 }
 
 .players-table th,
 .players-table td {
-  text-align: left;
-  padding: 10px 8px;
-  border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid #e5e7eb;
 }
 
 .players-table th {
-  font-weight: 600;
-  color: #111827;
-  background: #f9fafb;
+    font-weight: 600;
+    color: #111827;
+    background: #f9fafb;
 }
 
 /* Buttons */
 .button {
-  display: inline-block;
-  background: #2563eb;
-  color: #ffffff;
-  text-decoration: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 14px;
-  margin-bottom: 16px;
-  transition: background 0.2s ease;
+    display: inline-block;
+    background: #2563eb;
+    color: #ffffff;
+    text-decoration: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    transition: background 0.2s ease;
 }
 
 .button:hover {
-  background: #1d4ed8;
+    background: #1d4ed8;
 }
 
 /* Helper */
 .muted {
-  color: #6b7280;
-  font-size: 14px;
+    color: #6b7280;
+    font-size: 14px;
 }
 
 /* =========================
@@ -328,8 +328,15 @@ body {
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.8;
+    }
 }
 
 .game-time {
@@ -420,7 +427,9 @@ body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .search-container {
@@ -480,6 +489,41 @@ body {
     padding: 2rem 1.5rem;
     color: var(--text-light);
     text-decoration: none;
+}
+
+.toast-container {
+    position: fixed;
+    left: 50%;
+    top: 16px;
+    transform: translateX(-50%);
+    width: min(480px, calc(100% - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 0.9rem;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+    transform: translateY(16px);
+    opacity: 0;
+    animation: toast-in 0.24s ease-out forwards;
+}
+
+.toast.success { background: #16a34a; }
+.toast.error   { background: #dc2626; }
+
+@keyframes toast-in {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .team-card-logo {
@@ -588,7 +632,8 @@ body {
     background: rgba(37, 99, 235, 0.05);
 }
 
-.no-games, .error {
+.no-games,
+.error {
     text-align: center;
     padding: 3rem;
     font-size: 1.2rem;
@@ -599,7 +644,6 @@ body {
     .games-container {
         grid-template-columns: 1fr;
     }
-    
     .teams-grid {
         grid-template-columns: 1fr;
     }
@@ -622,10 +666,10 @@ body {
 }
 
 .game-arena {
-  margin-top: 8px;
-  font-size: 14px;
-  color: black;
-  font-weight: 500;
+    margin-top: 8px;
+    font-size: 14px;
+    color: black;
+    font-weight: 500;
 }
 
 .team-arena {
@@ -914,51 +958,51 @@ body {
 /* ================= QOTD STYLES =================
    From Peter's branch with vote functionality */
 .qotd-page {
-  max-width: 900px;
-  margin: 0 auto;
+    max-width: 900px;
+    margin: 0 auto;
 }
 
 .qotd-title {
-  color: black;
-  font-size: 32px;
-  margin-bottom: 12px;
-  text-align: center;
+    color: black;
+    font-size: 32px;
+    margin-bottom: 12px;
+    text-align: center;
 }
 
 .qotd-panel {
-  max-width: 850px;
-  margin: 80px auto;
-  padding: 30px;
+    max-width: 850px;
+    margin: 80px auto;
+    padding: 30px;
 
-  background: rgba(255,255,255,0.9);
-  border-radius: 14px;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 14px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5);
 }
 
 .qotd-date {
-  max-width: 220px;
-  margin-bottom: 12px;
-  display: block;
-  margin: 0 auto 12px;
+    max-width: 220px;
+    margin-bottom: 12px;
+    display: block;
+    margin: 0 auto 12px;
 }
 
 .qotd-card {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
 }
 
 .qotd-question {
-  font-size: 24px;
-  margin-bottom: 16px;
+    font-size: 24px;
+    margin-bottom: 16px;
 }
 
 .qotd-comment-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
 }
 
 .qotd-input,
@@ -966,126 +1010,790 @@ body {
 .replyUser,
 .replyText,
 #dateSelector {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  font-size: 14px;
-  background: #ffffff;
-  color: #1f2937;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #ffffff;
+    color: #1f2937;
 }
 
 .qotd-textarea,
 .replyText {
-  resize: vertical;
+    resize: vertical;
 }
 
 .qotd-comment {
-  background: #f3f4f6;
-  padding: 12px;
-  border-radius: 10px;
-  margin-top: 12px;
+    background: #f3f4f6;
+    padding: 12px;
+    border-radius: 10px;
+    margin-top: 12px;
 }
 
 .qotd-reply {
-  background: #e5e7eb;
-  padding: 10px;
-  border-radius: 8px;
-  margin-left: 30px;
-  margin-top: 8px;
-  border-left: 4px solid #2563eb;
+    background: #e5e7eb;
+    padding: 10px;
+    border-radius: 8px;
+    margin-left: 30px;
+    margin-top: 8px;
+    border-left: 4px solid #2563eb;
 }
 
 .qotd-comment-header {
-  font-weight: 600;
-  margin-bottom: 6px;
+    font-weight: 600;
+    margin-bottom: 6px;
 }
 
 .qotd-comment-text {
-  margin-bottom: 10px;
+    margin-bottom: 10px;
 }
 
 .qotd-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-top: 6px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 6px;
 }
 
 .vote-btn,
 .reply-btn {
-  background: #111827;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 13px;
+    background: #111827;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 13px;
 }
 
 .vote-btn:hover,
 .reply-btn:hover {
-  background: #1f2937;
+    background: #1f2937;
 }
 
 .reply-box {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .qotd-empty {
-  text-align: center;
-  font-size: 18px;
-  color: black;
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 20px;
+    text-align: center;
+    font-size: 18px;
+    color: black;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
 
-  background: rgba(255, 255, 255, .8);
+    background: rgba(255, 255, 255, .8);
 }
 
 .qotd-background {
-  background-image: url("database/static/images/pistons_arena.jpg");
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
+    background-image: url("database/static/images/pistons_arena.jpg");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
 }
 
 .qotd-background::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
 
-  background: rgba(0,0,0,0.55);
+    background: rgba(0, 0, 0, 0.55);
 
-  z-index: -1;
+    z-index: -1;
 }
 
 .qotd-shell {
-      background: #fff;
-      padding: 18px;
-      border-radius: 16px;
-      border: 1px solid var(--border-color);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    background: #fff;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.qotd-topbar {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.qotd-date-wrap label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.fan-tools-card,
+.comments-panel {
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    padding: 20px;
+    margin: 24px 0;
+}
+
+.fan-tools-header,
+.comments-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.fan-tools-header h3,
+.comments-panel-header h3 {
+    margin: 0 0 4px;
+}
+
+.fan-tools-header p,
+.comments-panel-header p,
+.fan-tools-help {
+    margin: 0;
+    color: #6b7280;
+}
+
+.fan-tools-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) 1fr;
+    gap: 16px;
+    align-items: end;
+}
+
+.favorite-team-grid {
+    align-items: stretch;
+}
+
+.fan-tools-label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.fan-tools-input,
+.fan-tools-textarea {
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font: inherit;
+    box-sizing: border-box;
+    background: #fff;
+}
+
+.fan-tools-textarea {
+    resize: vertical;
+}
+
+.fan-alert-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    border-radius: 14px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    min-height: 86px;
+}
+
+.fan-alert-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fan-alert-copy span {
+    color: #6b7280;
+}
+
+.fan-action-btn {
+    border: none;
+    border-radius: 12px;
+    background: #111827;
+    color: #fff;
+    padding: 12px 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+
+.fan-action-btn:hover {
+    transform: translateY(-1px);
+}
+
+.fan-action-btn.primary {
+    background: #dc2626;
+}
+
+.fan-action-btn.active {
+    background: #2563eb;
+}
+
+.fan-action-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+    transform: none;
+}
+
+.comment-composer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.comment-composer-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.game-comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.game-comment {
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: #fff;
+}
+
+.game-comment.reply {
+    background: #f8fafc;
+}
+
+.game-comment-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.game-comment-meta span {
+    color: #6b7280;
+}
+
+.game-comment-text {
+    margin: 0 0 10px;
+    line-height: 1.5;
+}
+
+.game-comment-actions {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.game-replies {
+    margin-top: 12px;
+    padding-left: 18px;
+    border-left: 3px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.inline-reply-box {
+    margin-top: 12px;
+    padding-top: 12px;
+}
+
+.game-comment-empty {
+    text-align: center;
+    color: #6b7280;
+    padding: 18px;
+    border: 1px dashed #d1d5db;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+@media (max-width: 900px) {
+    .fan-tools-grid {
+        grid-template-columns: 1fr;
     }
 
-    .qotd-topbar {
-      display: flex;
-      gap: 12px;
-      align-items: flex-end;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
+    .fan-alert-box {
+        flex-direction: column;
+        align-items: stretch;
     }
 
-    .qotd-date-wrap label {
-      display: block;
-      font-weight: 700;
-      margin-bottom: 6px;
+    .comment-composer-actions {
+        justify-content: stretch;
     }
+
+    .comment-composer-actions .fan-action-btn {
+        width: 100%;
+    }
+
+    .game-comment-meta {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+.card-icon-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    color: #9ca3af;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 3;
+    transition: all 0.18s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.card-icon-btn:hover {
+    transform: translateY(-1px);
+    border-color: #facc15;
+}
+
+.card-icon-btn.active {
+    color: #eab308;
+    border-color: #facc15;
+    background: #fffdf2;
+}
+
+.card-icon-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.game-alert-btn {
+    top: 12px;
+    right: 12px;
+}
+
+.team-card {
+    position: relative;
+}
+
+.team-card a {
+    position: relative;
+    z-index: 1;
+}
+
+
+.team-hero-card {
+    position: relative;
+}
+
+.team-detail-page .team-favorite-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    font-size: 16px;
+    z-index: 5;
+}
+
+.team-favorite-btn {
+    top: 12px;
+    right: 12px;
+    font-size: 15px;
+}
+
+.game-comments-shot-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    padding: 22px;
+    margin: 24px 0;
+}
+
+.game-comments-shot-title {
+    color: #ef4444;
+    font-size: 1.05rem;
+    font-weight: 800;
+    margin-bottom: 12px;
+}
+
+.game-comments-shot-input,
+.game-comments-shot-textarea {
+    width: 100%;
+    border: 1px solid #dbe3ee;
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 14px 18px;
+    font: inherit;
+    color: #374151;
+    margin-bottom: 14px;
+}
+
+.game-comments-shot-textarea {
+    min-height: 76px;
+    resize: vertical;
+}
+
+.game-comments-shot-input:focus,
+.game-comments-shot-textarea:focus {
+    outline: none;
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.game-comments-shot-button {
+    width: 100%;
+    border: 2px solid #1f2937;
+    border-radius: 10px;
+    background: #2563eb;
+    color: #ffffff;
+    padding: 10px 16px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-bottom: 14px;
+}
+
+.game-comments-shot-button:hover {
+    background: #1d4ed8;
+}
+
+.game-comments-shot-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.game-comments-shot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.game-comment-shot-card {
+    border: 1px solid #dbe3ee;
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 14px 12px;
+}
+
+.game-comment-shot-card.reply {
+    margin-left: 20px;
+}
+
+.game-comment-shot-author {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 4px;
+}
+
+.game-comment-shot-date {
+    font-size: 0.92rem;
+    color: #6b7280;
+    margin-bottom: 10px;
+}
+
+.game-comment-shot-text {
+    color: #1f2937;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.game-watchlist-btn {
+    top: 12px;
+    right: 50px;
+}
+
+.myfeed-hero {
+    text-align: left;
+    margin-bottom: 2rem;
+}
+
+.myfeed-userbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.myfeed-user-chip,
+.myfeed-count-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #1d4ed8;
+    font-weight: 700;
+    font-size: 0.9rem;
+    border: 1px solid #dbeafe;
+}
+
+.myfeed-secondary-btn {
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: #111827;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.myfeed-secondary-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.myfeed-secondary-btn.small {
+    padding: 8px 12px;
+    font-size: 0.9rem;
+}
+
+.myfeed-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.myfeed-section-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    min-height: 280px;
+}
+
+.myfeed-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.myfeed-section-head h2 {
+    font-size: 1.2rem;
+    margin-top: 2px;
+}
+
+.myfeed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.myfeed-empty {
+    border: 1px dashed #d1d5db;
+    border-radius: 14px;
+    background: #f8fafc;
+    padding: 18px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.myfeed-team-item,
+.myfeed-reply-item,
+.myfeed-game-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    background: #ffffff;
+}
+
+.myfeed-team-item,
+.myfeed-reply-item,
+.myfeed-game-main {
+    text-decoration: none;
+    color: inherit;
+}
+
+.myfeed-team-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    justify-content: space-between;
+}
+
+.myfeed-team-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
+}
+
+.myfeed-team-logo-wrap {
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e5e7eb;
+    flex-shrink: 0;
+}
+
+.myfeed-team-logo,
+.myfeed-team-mini-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.myfeed-team-mini-logo {
+    width: 28px;
+    height: 28px;
+}
+
+.myfeed-logo-fallback {
+    font-size: 1.4rem;
+}
+
+.myfeed-team-main:hover {
+    opacity: 0.8;
+}
+
+.myfeed-item-title {
+    font-weight: 800;
+    color: #111827;
+}
+
+.myfeed-item-subtext {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    margin-top: 4px;
+}
+
+.myfeed-game-item {
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.myfeed-game-main {
+    display: block;
+    flex: 1;
+}
+
+.myfeed-game-teams-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.myfeed-game-team-mini {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.myfeed-versus {
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.myfeed-scoreline {
+    margin-top: 6px;
+    font-size: 0.95rem;
+    color: #111827;
+}
+
+.myfeed-item-actions {
+    flex-shrink: 0;
+}
+
+.myfeed-reply-item {
+    display: block;
+    padding: 14px;
+}
+
+.myfeed-reply-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+}
+
+.myfeed-reply-date {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.myfeed-quote-block {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    font-size: 0.94rem;
+}
+
+.myfeed-quote-block.reply {
+    background: #eff6ff;
+    border-color: #dbeafe;
+}
+
+@media (max-width: 980px) {
+    .myfeed-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .myfeed-game-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .myfeed-item-actions {
+        width: 100%;
+    }
+
+    .myfeed-item-actions .myfeed-secondary-btn {
+        width: 100%;
+    }
+
+    .myfeed-reply-topline {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+
+.page-kicker {
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary-color);
+}
