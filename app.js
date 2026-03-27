@@ -65,6 +65,30 @@ async function fetchJson(url, options = {}) {
     return data;
 }
 
+function showToast(message, type = 'success', duration = 2800) {
+    const container = document.querySelector('.toast-container') || (() => {
+        const el = document.createElement('div');
+        el.className = 'toast-container';
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(16px)';
+    }, duration);
+
+    setTimeout(() => {
+        toast.remove();
+        if (!container.children.length) container.remove();
+    }, duration + 260);
+}
+
 function updateAlertButtonState(button, isActive) {
     if (!button) return;
     button.classList.toggle('active', Boolean(isActive));
@@ -114,6 +138,7 @@ async function toggleGameWatchlistFromCard(event, gameId) {
                 method: 'DELETE'
             });
             updateWatchlistButtonState(button, false);
+            showToast('Removed game from watchlist', 'success');
         } else {
             await fetchJson(`${API_URL}/api/games/${gameId}/watchlist`, {
                 method: 'POST',
@@ -121,9 +146,10 @@ async function toggleGameWatchlistFromCard(event, gameId) {
                 body: JSON.stringify({ user_id: userId })
             });
             updateWatchlistButtonState(button, true);
+            showToast('Added game to watchlist', 'success');
         }
     } catch (error) {
-        alert(error.message || 'Could not update watchlist.');
+        showToast(error.message || 'Could not update watchlist.', 'error');
     } finally {
         button.disabled = false;
     }
@@ -166,6 +192,7 @@ async function toggleGameAlertFromCard(event, gameId) {
                 method: 'DELETE'
             });
             updateAlertButtonState(button, false);
+            showToast('Game alert removed', 'success');
         } else {
             await fetchJson(`${API_URL}/api/games/${gameId}/alerts`, {
                 method: 'POST',
@@ -173,9 +200,10 @@ async function toggleGameAlertFromCard(event, gameId) {
                 body: JSON.stringify({ user_id: userId })
             });
             updateAlertButtonState(button, true);
+            showToast('Game alert saved', 'success');
         }
     } catch (error) {
-        alert(error.message || 'Could not update game alert.');
+        showToast(error.message || 'Could not update game alert.', 'error');
     } finally {
         button.disabled = false;
     }

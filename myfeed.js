@@ -9,6 +9,17 @@ const favoritesList = document.getElementById("favorites-list");
 const watchlistList = document.getElementById("watchlist-list");
 const alertsList = document.getElementById("alerts-list");
 
+function formatDate(dateString) {
+  const date = new Date(dateString);
+
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
+
 function readSavedUserId() {
     return localStorage.getItem(USER_ID_STORAGE_KEY) || "";
 }
@@ -39,6 +50,30 @@ async function fetchJson(url, options = {}) {
         throw new Error(data?.error || data?.message || `${res.status} ${res.statusText}`);
     }
     return data;
+}
+
+function showToast(message, type = 'success', duration = 2800) {
+    const container = document.querySelector('.toast-container') || (() => {
+        const el = document.createElement('div');
+        el.className = 'toast-container';
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(16px)';
+    }, duration);
+
+    setTimeout(() => {
+        toast.remove();
+        if (!container.children.length) container.remove();
+    }, duration + 260);
 }
 
 function safeText(value) {
@@ -75,6 +110,47 @@ function formatGameDate(value) {
         day: "numeric",
         year: "numeric"
     });
+}
+
+function formatGameDateTime(gameDate, startTime) {
+    if (!gameDate) return "Date TBD";
+    if (!startTime) return formatGameDate(gameDate);
+
+    const dateTimeStr = `${gameDate}T${startTime}`;
+    const date = new Date(dateTimeStr);
+    if (Number.isNaN(date.getTime())) return formatGameDate(gameDate);
+
+    return date.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+    });
+}
+
+function formatLiveClock(value) {
+    if (!value) return "";
+
+    // NBA API / game cache may provide ISO 8601 duration style like PT1M17.00S
+    const isoDurationMatch = String(value).match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i);
+    if (isoDurationMatch) {
+        const hours = Number(isoDurationMatch[1] || 0);
+        const minutes = Number(isoDurationMatch[2] || 0);
+        const seconds = Number(isoDurationMatch[3] || 0);
+        let totalSeconds = Math.floor(hours * 3600 + minutes * 60 + seconds);
+        const displayHours = Math.floor(totalSeconds / 3600);
+        totalSeconds = totalSeconds % 3600;
+        const displayMinutes = Math.floor(totalSeconds / 60);
+        const displaySeconds = totalSeconds % 60;
+
+        if (displayHours > 0) {
+            return `${displayHours}:${String(displayMinutes).padStart(2, "0")}:${String(displaySeconds).padStart(2, "0")}`;
+        }
+        return `${displayMinutes}:${String(displaySeconds).padStart(2, "0")}`;
+    }
+
+    // If it's already a conventional clock string, just return it
+    return String(value);
 }
 
 function nbaLogoUrl(teamId) {
@@ -114,15 +190,20 @@ function renderFavorites(items) {
         const displayName = buildTeamName({ name: team.name, city: team.city });
         const logoSrc = team.logo_url || nbaLogoUrl(team.nba_team_id);
         return `
-      <a class="myfeed-team-item" href="team-detail.html?id=${encodeURIComponent(team.team_id)}">
-        <div class="myfeed-team-logo-wrap">
-          ${logoSrc ? `<img class="myfeed-team-logo" src="${escapeHtml(logoSrc)}" alt="${escapeHtml(displayName)}" onerror="this.onerror=null;this.src='${escapeHtml(nbaLogoUrl(team.nba_team_id))}'">` : '<span class="myfeed-logo-fallback">🏀</span>'}
+      <div class="myfeed-team-item">
+        <a class="myfeed-team-main" href="team-detail.html?id=${encodeURIComponent(team.team_id)}">
+          <div class="myfeed-team-logo-wrap">
+            ${logoSrc ? `<img class="myfeed-team-logo" src="${escapeHtml(logoSrc)}" alt="${escapeHtml(displayName)}" onerror="this.onerror=null;this.src='${escapeHtml(nbaLogoUrl(team.nba_team_id))}'">` : '<span class="myfeed-logo-fallback">🏀</span>'}
+          </div>
+          <div class="myfeed-team-copy">
+            <div class="myfeed-item-title">${escapeHtml(displayName)}</div>
+            <div class="myfeed-item-subtext">${escapeHtml(safeText(team.abbreviation))} • ${Number(team.wins || 0)}-${Number(team.losses || 0)}</div>
+          </div>
+        </a>
+        <div class="myfeed-item-actions">
+          <button class="myfeed-secondary-btn small" type="button" onclick="removeFavoriteTeam('${team.team_id}')">Remove</button>
         </div>
-        <div class="myfeed-team-copy">
-          <div class="myfeed-item-title">${escapeHtml(displayName)}</div>
-          <div class="myfeed-item-subtext">${escapeHtml(safeText(team.abbreviation))} • ${Number(team.wins || 0)}-${Number(team.losses || 0)}</div>
-        </div>
-      </a>
+      </div>
     `;
     }).join("");
 }
@@ -136,17 +217,19 @@ function gameLogo(prefix, row) {
 }
 
 function gameStatusLine(row) {
-    if (safeText(row.status) === "live") {
+    const status = safeText(row.status);
+
+    if (status === "live") {
         const periodText = row.period ? `Q${row.period}` : "Live";
-        const clockText = row.clock ? ` • ${row.clock}` : "";
+        const clockText = row.clock ? ` • ${formatLiveClock(row.clock)}` : "";
         return `Live • ${periodText}${clockText}`;
     }
 
-    if (safeText(row.status) === "final") {
-        return `Final • ${formatGameDate(row.game_date)}`;
+    if (status === "final") {
+        return `Final • ${formatGameDateTime(row.game_date, row.start_time)}`;
     }
 
-    return `Upcoming • ${formatGameDate(row.game_date)}`;
+    return `Upcoming • ${formatGameDateTime(row.game_date, row.start_time)}`;
 }
 
 function gameScoreLine(row) {
@@ -208,7 +291,7 @@ function renderReplies(items) {
         const isGame = safeText(reply.source_type) === "game";
         const title = isGame
             ? `${gameDisplayName("away", reply)} vs ${gameDisplayName("home", reply)}`
-            : `QOTD • ${safeText(reply.question_date) || "Question"}`;
+            : `QOTD • ${formatDate(reply.question_date) || "Question"}`
         const href = isGame
             ? buildGameLink(reply)
             : `qotd.html?date=${encodeURIComponent(reply.question_date || "")}`;
@@ -242,12 +325,33 @@ async function removeSavedGame(mode, gameIdentifier) {
     try {
         await fetchJson(endpoint, { method: "DELETE" });
         await loadMyFeed();
+
+        if (mode === "watchlist") {
+            showToast("Removed game from watchlist", "success");
+        } else {
+            showToast("Game alert turned off", "success");
+        }
     } catch (error) {
-        alert(error.message || "Could not update saved game item.");
+        showToast(error.message || "Could not update saved game item.", "error");
     }
 }
 
 window.removeSavedGame = removeSavedGame;
+
+async function removeFavoriteTeam(teamId) {
+    const userId = getActiveUserId();
+    if (!userId || !teamId) return;
+
+    try {
+        await fetchJson(`${API_BASE}/api/users/${userId}/favorites/${teamId}`, { method: "DELETE" });
+        await loadMyFeed();
+        showToast("Removed team from favorites", "success");
+    } catch (error) {
+        showToast(error.message || "Could not remove favorite team.", "error");
+    }
+}
+
+window.removeFavoriteTeam = removeFavoriteTeam;
 
 async function loadMyFeed() {
     const userId = getActiveUserId();

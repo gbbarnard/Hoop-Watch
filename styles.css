@@ -491,6 +491,41 @@ body {
     text-decoration: none;
 }
 
+.toast-container {
+    position: fixed;
+    left: 50%;
+    top: 16px;
+    transform: translateX(-50%);
+    width: min(480px, calc(100% - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 0.9rem;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+    transform: translateY(16px);
+    opacity: 0;
+    animation: toast-in 0.24s ease-out forwards;
+}
+
+.toast.success { background: #16a34a; }
+.toast.error   { background: #dc2626; }
+
+@keyframes toast-in {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .team-card-logo {
     width: 100px;
     height: 100px;
@@ -1599,6 +1634,16 @@ body {
     align-items: center;
     gap: 14px;
     padding: 14px;
+    justify-content: space-between;
+}
+
+.myfeed-team-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
 }
 
 .myfeed-team-logo-wrap {
@@ -1629,8 +1674,8 @@ body {
     font-size: 1.4rem;
 }
 
-.myfeed-team-copy {
-    min-width: 0;
+.myfeed-team-main:hover {
+    opacity: 0.8;
 }
 
 .myfeed-item-title {

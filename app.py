@@ -2429,80 +2429,78 @@ def _get_user_comment_replies(user_id):
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
             """
-            SELECT *
-            FROM (
-                SELECT
-                    CAST('game' AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS source_type,
-                    reply.comment_id AS reply_id,
-                    CONVERT(reply.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reply_text,
-                    reply.created_at AS reply_created_at,
-                    parent.comment_id AS your_comment_id,
-                    CONVERT(parent.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS your_comment_text,
-                    reply.user_id AS replier_user_id,
-                    CONVERT(COALESCE(reply_user.email, CONCAT('User ', reply.user_id)) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS replier_name,
-                    g.game_id,
-                    CONVERT(COALESCE(g.nba_game_id, CAST(g.game_id AS CHAR)) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS game_identifier,
-                    CONVERT(g.nba_game_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS nba_game_id,
-                    g.game_date,
-                    ht.team_id AS home_team_id,
-                    CONVERT(ht.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
-                    CONVERT(ht.city USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_city,
-                    CONVERT(ht.abbreviation USING utf8mb4) COLLATE utf8mb4_unicode_ci AS home_abbreviation,
-                    ht.nba_team_id AS home_nba_team_id,
-                    at.team_id AS away_team_id,
-                    CONVERT(at.name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name,
-                    CONVERT(at.city USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_city,
-                    CONVERT(at.abbreviation USING utf8mb4) COLLATE utf8mb4_unicode_ci AS away_abbreviation,
-                    at.nba_team_id AS away_nba_team_id,
-                    NULL AS question_id,
-                    NULL AS question_date,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS question_text
-                FROM game_comments parent
-                JOIN game_comments reply ON reply.parent_comment_id = parent.comment_id
-                JOIN users reply_user ON reply.user_id = reply_user.user_id
-                JOIN games g ON parent.game_id = g.game_id
-                JOIN teams ht ON g.home_team_id = ht.team_id
-                JOIN teams at ON g.away_team_id = at.team_id
-                WHERE parent.user_id = %s
-                  AND reply.user_id <> parent.user_id
+            SELECT
+                'game' AS source_type,
+                reply.comment_id AS reply_id,
+                reply.comment_text AS reply_text,
+                reply.created_at AS reply_created_at,
+                parent.comment_id AS your_comment_id,
+                parent.comment_text AS your_comment_text,
+                reply.user_id AS replier_user_id,
+                COALESCE(reply_user.email, CONCAT('User ', reply.user_id)) AS replier_name,
+                g.game_id,
+                COALESCE(g.nba_game_id, g.game_id) AS game_identifier,
+                g.nba_game_id,
+                g.game_date,
+                ht.team_id AS home_team_id,
+                ht.name AS home_name,
+                ht.city AS home_city,
+                ht.abbreviation AS home_abbreviation,
+                ht.nba_team_id AS home_nba_team_id,
+                at.team_id AS away_team_id,
+                at.name AS away_name,
+                at.city AS away_city,
+                at.abbreviation AS away_abbreviation,
+                at.nba_team_id AS away_nba_team_id,
+                NULL AS question_id,
+                NULL AS question_date,
+                NULL AS question_text
+            FROM game_comments parent
+            JOIN game_comments reply ON reply.parent_comment_id = parent.comment_id
+            JOIN users reply_user ON reply.user_id = reply_user.user_id
+            JOIN games g ON parent.game_id = g.game_id
+            JOIN teams ht ON g.home_team_id = ht.team_id
+            JOIN teams at ON g.away_team_id = at.team_id
+            WHERE parent.user_id = %s
+            AND reply.user_id <> parent.user_id
 
-                UNION ALL
+            UNION ALL
 
-                SELECT
-                    CAST('qotd' AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS source_type,
-                    reply.comment_id AS reply_id,
-                    CONVERT(reply.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS reply_text,
-                    reply.created_at AS reply_created_at,
-                    parent.comment_id AS your_comment_id,
-                    CONVERT(parent.comment_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS your_comment_text,
-                    reply.user_id AS replier_user_id,
-                    CONVERT(COALESCE(reply_user.email, CONCAT('User ', reply.user_id)) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS replier_name,
-                    NULL AS game_id,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS game_identifier,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS nba_game_id,
-                    NULL AS game_date,
-                    NULL AS home_team_id,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS home_name,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS home_city,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS home_abbreviation,
-                    NULL AS home_nba_team_id,
-                    NULL AS away_team_id,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS away_name,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS away_city,
-                    CAST(NULL AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS away_abbreviation,
-                    NULL AS away_nba_team_id,
-                    q.question_id,
-                    q.question_date,
-                    CONVERT(q.question_text USING utf8mb4) COLLATE utf8mb4_unicode_ci AS question_text
-                FROM qotd_comments parent
-                JOIN qotd_comments reply ON reply.parent_comment_id = parent.comment_id
-                JOIN users reply_user ON reply.user_id = reply_user.user_id
-                JOIN qotd_questions q ON parent.question_id = q.question_id
-                WHERE parent.user_id = %s
-                  AND reply.user_id <> parent.user_id
-            ) replies
+            SELECT
+                'qotd' AS source_type,
+                reply.comment_id AS reply_id,
+                reply.comment_text AS reply_text,
+                reply.created_at AS reply_created_at,
+                parent.comment_id AS your_comment_id,
+                parent.comment_text AS your_comment_text,
+                reply.user_id AS replier_user_id,
+                COALESCE(reply_user.email, CONCAT('User ', reply.user_id)) AS replier_name,
+                NULL AS game_id,
+                NULL AS game_identifier,
+                NULL AS nba_game_id,
+                NULL AS game_date,
+                NULL AS home_team_id,
+                NULL AS home_name,
+                NULL AS home_city,
+                NULL AS home_abbreviation,
+                NULL AS home_nba_team_id,
+                NULL AS away_team_id,
+                NULL AS away_name,
+                NULL AS away_city,
+                NULL AS away_abbreviation,
+                NULL AS away_nba_team_id,
+                q.question_id,
+                q.question_date,
+                q.question_text
+            FROM qotd_comments parent
+            JOIN qotd_comments reply ON reply.parent_comment_id = parent.comment_id
+            JOIN users reply_user ON reply.user_id = reply_user.user_id
+            JOIN qotd_questions q ON parent.question_id = q.question_id
+            WHERE parent.user_id = %s
+            AND reply.user_id <> parent.user_id
+
             ORDER BY reply_created_at DESC
-            LIMIT 50
+            LIMIT 50;
             """,
             (user_id, user_id),
         )
@@ -2673,7 +2671,7 @@ def get_user_myfeed(user_id):
             JOIN teams t ON f.team_id = t.team_id
             LEFT JOIN team_standings ts ON t.team_id = ts.team_id
             WHERE f.user_id = %s
-            ORDER BY f.created_at DESC
+            ORDER BY f.created_at DESC;
             """,
             (user_id,),
         )
