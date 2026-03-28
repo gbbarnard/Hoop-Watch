@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account | HoopWatch</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+      <span class="brand-name">HoopWatch</span>
+    </div>
+    <ul class="nav-menu">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="games.html">Season Games</a></li>
+      <li><a href="teams.html">Teams</a></li>
+      <li><a href="myfeed.html">My Feed</a></li>
+      <li><a href="qotd.html">QOTD</a></li>
+    </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+  </nav>
+
+  <main class="container account-page-shell">
+    <section class="account-shell">
+      <div class="account-header-bar">
+        <div>
+          <h1>Account Settings</h1>
+          <p>Update your account info and preferences here.</p>
+        </div>
+      </div>
+
+      <div id="account-locked" class="account-locked" hidden>
+        <h2>You are not logged in</h2>
+        <p>Log in first to edit your account settings.</p>
+        <a href="login.html" class="primary-auth-btn inline-auth-btn">Go to Login</a>
+      </div>
+
+      <div id="account-content" class="account-layout" hidden>
+        <aside class="account-sidebar">
+          <div class="account-avatar" id="account-avatar">HW</div>
+          <p class="account-sidebar-label">Logged in account</p>
+          <button type="button" class="secondary-auth-btn" id="account-logout-btn">Log Out</button>
+        </aside>
+
+        <section class="account-main-panel">
+          <div id="account-message" class="auth-message" hidden></div>
+
+          <form id="account-form" class="account-form-grid">
+            <label>
+              Name
+              <input type="text" id="account-display-name" required>
+            </label>
+            <label>
+              Username
+              <input type="text" id="account-username" required>
+            </label>
+            <label class="full-width">
+              Email
+              <input type="email" id="account-email" required>
+            </label>
+            <label class="full-width">
+              About Me
+              <textarea id="account-bio" rows="5" placeholder="Write a short bio about yourself..."></textarea>
+            </label>
+            <label>
+              Current Password
+              <input type="password" id="account-current-password" placeholder="Only needed when changing password">
+            </label>
+            <label>
+              New Password
+              <input type="password" id="account-new-password" minlength="6" placeholder="Leave blank to keep current password">
+            </label>
+            <div class="full-width account-form-actions">
+              <button type="submit" class="primary-auth-btn">Save Changes</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
+  <script src="account.js"></script>
+</body>
+</html>

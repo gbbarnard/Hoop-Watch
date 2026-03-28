@@ -8,11 +8,15 @@ USE hoopwatch;
 
 -- ---------- USERS ----------
 CREATE TABLE users (
-  user_id         INT AUTO_INCREMENT PRIMARY KEY,
-  email           VARCHAR(255) NULL UNIQUE,
-  password_hash   VARCHAR(255) NULL,
-  role            ENUM('base','pro','admin') NOT NULL DEFAULT 'base',
-  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  user_id           INT AUTO_INCREMENT PRIMARY KEY,
+  email             VARCHAR(255) NULL UNIQUE,
+  username          VARCHAR(80) NULL UNIQUE,
+  display_name      VARCHAR(120) NULL,
+  bio               TEXT NULL,
+  profile_image_url VARCHAR(500) NULL,
+  password_hash     VARCHAR(255) NULL,
+  role              ENUM('base','pro','admin') NOT NULL DEFAULT 'base',
+  created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 
