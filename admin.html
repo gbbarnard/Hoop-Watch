@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard | HoopWatch</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+      <span class="brand-name">HoopWatch</span>
+    </div>
+    <ul class="nav-menu">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="games.html">Season Games</a></li>
+      <li><a href="teams.html">Teams</a></li>
+      <li><a href="myfeed.html">My Feed</a></li>
+      <li><a href="qotd.html">QOTD</a></li>
+    </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+  </nav>
+
+  <main class="container admin-page-shell">
+    <section class="admin-shell">
+      <div class="admin-header-bar">
+        <div>
+          <p class="admin-eyebrow">HoopWatch Admin</p>
+          <h1>Admin Dashboard</h1>
+          <p>Manage today's home page content, moderate comments, and update the question of the day.</p>
+        </div>
+        <a href="account.html" class="secondary-auth-btn inline-auth-btn">Back to Account</a>
+      </div>
+
+      <div id="admin-message" class="auth-message" hidden></div>
+
+      <div id="admin-locked" class="account-locked" hidden>
+        <h2>Admin access only</h2>
+        <p>You need to be logged in as an admin to view this page.</p>
+        <a href="account.html" class="primary-auth-btn inline-auth-btn">Go to Account</a>
+      </div>
+
+      <div id="admin-content" hidden>
+        <section class="admin-stat-grid">
+          <article class="admin-stat-card">
+            <span class="admin-stat-label"># of Users</span>
+            <strong id="admin-total-users">0</strong>
+          </article>
+          <article class="admin-stat-card">
+            <span class="admin-stat-label"># Games Tracked Today</span>
+            <strong id="admin-tracked-today">0</strong>
+          </article>
+          <article class="admin-stat-card">
+            <span class="admin-stat-label">API Last Sync Time</span>
+            <strong id="admin-last-sync">--</strong>
+          </article>
+          <article class="admin-stat-card">
+            <span class="admin-stat-label">Open Reports / Flags</span>
+            <strong id="admin-open-reports">0</strong>
+          </article>
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-header">
+            <div>
+              <h2>Admin Tools</h2>
+              <p>Quick actions for keeping your cached basketball data fresh.</p>
+            </div>
+          </div>
+          <div class="admin-action-grid">
+            <button type="button" class="secondary-auth-btn admin-action-btn" data-admin-sync="teams">Sync Teams</button>
+            <button type="button" class="secondary-auth-btn admin-action-btn" data-admin-sync="standings">Sync Standings</button>
+            <button type="button" class="secondary-auth-btn admin-action-btn" data-admin-sync="players">Sync Players</button>
+            <button type="button" class="secondary-auth-btn admin-action-btn" data-admin-sync="completed-game-details">Sync Completed Game Details</button>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-header">
+            <div>
+              <h2>Featured and today's NBA Games Home Page</h2>
+              <p>Set the daily fact, featured game, and teams to watch that show on the home page.</p>
+            </div>
+          </div>
+
+          <div class="admin-date-row">
+            <label>
+              Content Date
+              <input type="date" id="admin-content-date">
+            </label>
+            <button type="button" class="secondary-auth-btn" id="admin-reload-content-btn">Load Date</button>
+          </div>
+
+          <div class="admin-home-grid">
+            <div class="admin-field-card">
+              <label class="full-width">
+                Fact of the Day
+                <textarea id="admin-fact-text" rows="4" placeholder="Write the fact of the day..."></textarea>
+              </label>
+              <label>
+                Featured Game
+                <select id="admin-featured-game-select">
+                  <option value="">No featured game selected</option>
+                </select>
+              </label>
+              <div class="admin-inline-actions">
+                <button type="button" class="primary-auth-btn" id="admin-save-daily-content-btn">Save Home Page Content</button>
+                <button type="button" class="secondary-auth-btn" id="admin-clear-daily-content-btn">Clear</button>
+              </div>
+            </div>
+
+            <div class="admin-field-card">
+              <label class="full-width">
+                Teams to Watch
+                <select id="admin-teams-to-watch" multiple size="8"></select>
+              </label>
+              <p class="admin-help-text">Hold Ctrl (Windows) or Command (Mac) to choose multiple teams.</p>
+              <div class="admin-inline-actions">
+                <button type="button" class="primary-auth-btn" id="admin-save-teams-btn">Save Teams to Watch</button>
+                <button type="button" class="secondary-auth-btn" id="admin-clear-teams-btn">Clear</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-header">
+            <div>
+              <h2>Comments Moderation</h2>
+              <p>Review recent comments and remove anything that should not stay up.</p>
+            </div>
+            <button type="button" class="secondary-auth-btn" id="admin-refresh-comments-btn">Refresh Comments</button>
+          </div>
+
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>User</th>
+                  <th>Comment</th>
+                  <th>Created</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="admin-comments-body">
+                <tr>
+                  <td colspan="5" class="admin-empty-cell">No comments loaded yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-header">
+            <div>
+              <h2>Question of the Day</h2>
+              <p>Pick a date and save the question you want to show on QOTD.</p>
+            </div>
+          </div>
+
+          <div class="admin-qotd-grid">
+            <label>
+              Question Date
+              <input type="date" id="admin-qotd-date">
+            </label>
+            <label class="admin-toggle-row">
+              <input type="checkbox" id="admin-qotd-open" checked>
+              <span>Question is open</span>
+            </label>
+          </div>
+
+          <label class="full-width">
+            Question Text
+            <textarea id="admin-qotd-text" rows="4" placeholder="Who is your MVP so far this season and why?"></textarea>
+          </label>
+
+          <div class="admin-inline-actions">
+            <button type="button" class="primary-auth-btn" id="admin-save-qotd-btn">Save Question</button>
+            <button type="button" class="secondary-auth-btn" id="admin-clear-qotd-btn">Clear</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

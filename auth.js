@@ -25,6 +25,10 @@ function readStoredAuthToken() {
   return localStorage.getItem(HOOPWATCH_AUTH_TOKEN_KEY) || '';
 }
 
+function isAdminUser(user = readStoredAuthUser()) {
+  return String(user?.role || '').toLowerCase() === 'admin';
+}
+
 function storeAuthSession(user, token) {
   if (user) {
     localStorage.setItem(HOOPWATCH_AUTH_USER_KEY, JSON.stringify(user));
@@ -59,7 +63,7 @@ async function logoutAuthUser() {
 
   clearAuthSession();
 
-  if (window.location.pathname.endsWith('/account.html')) {
+  if (window.location.pathname.endsWith('/account.html') || window.location.pathname.endsWith('/admin.html')) {
     window.location.href = 'login.html';
   }
 }
@@ -102,6 +106,7 @@ if (document.readyState === 'loading') {
 window.HoopWatchAuth = {
   readStoredAuthUser,
   readStoredAuthToken,
+  isAdminUser,
   storeAuthSession,
   clearAuthSession,
   logoutAuthUser,
