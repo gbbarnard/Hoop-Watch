@@ -7,13 +7,23 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-content">
-            <a href="index.html" class="logo">
-                <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
-                <span>HoopWatch</span>
-            </a>
+        <nav class="navbar detail-navbar">
+        <div class="nav-brand detail-nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <div>
+                <div class="brand-name">HoopWatch</div>
+                <a href="index.html" class="back-link detail-back-link">← Back to Home</a>
+            </div>
         </div>
+
+        <ul class="nav-menu">
+            <li><a href="index.html" class="active">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
+            <li><a href="teams.html">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+        </ul>
+    <div class="nav-actions nav-auth-slot"></div>
     </nav>
 
     <main class="container">
@@ -26,13 +36,11 @@
                         <div id="away-score" class="score"></div>
                     </div>
                 </div>
-                
                 <div class="game-status-center">
                     <div id="game-status" class="game-status-text"></div>
                     <div id="game-time" class="game-time"></div>
                     <div id="game-arena" class="game-arena"></div>
                 </div>
-                
                 <div class="team-score home-team-score">
                     <div class="team-info">
                         <h2 id="home-team-name"></h2>
@@ -41,7 +49,6 @@
                     <img id="home-logo" class="team-logo-large" alt="Home Team">
                 </div>
             </div>
-            
             <div id="quarter-scores" class="quarter-scores"></div>
         </div>
 
@@ -63,8 +70,22 @@
                 </div>
             </div>
         </div>
+
+        <section class="game-comments-shot-card">
+            <h3 class="game-comments-shot-title">Game Comments</h3>
+            <input id="comment-display-name" class="game-comments-shot-input" type="text" maxlength="40"
+                placeholder="Name (optional)">
+            <textarea id="game-comment-text" class="game-comments-shot-textarea" rows="4"
+                placeholder="Leave a comment about this game..."></textarea>
+            <button id="post-game-comment-btn" class="game-comments-shot-button" type="button">Post Comment</button>
+            <div id="game-comments-list" class="game-comments-shot-list">
+                <div class="loading">Loading comments...</div>
+            </div>
+        </section>
     </main>
 
+    <script src="auth.js"></script>
     <script src="game-detail.js"></script>
 </body>
+
 </html>

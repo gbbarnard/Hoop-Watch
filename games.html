@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Season Games | HoopWatch</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+      <nav class="navbar">
+        <div class="nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <span class="brand-name">HoopWatch</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="games.html" class="active">Season Games</a></li>
+            <li><a href="teams.html">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+        </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+    </nav>
+
+  <main class="container">
+    <section class="hero-section season-games-hero">
+      <h1>Season Games</h1>
+      <p>See the games left on the schedule and the ones already completed, with scores and winners.</p>
+      <div class="season-summary-chips">
+        <span id="all-count-chip" class="summary-chip">All: 0</span>
+        <span id="live-count-chip" class="summary-chip">Live: 0</span>
+        <span id="upcoming-count-chip" class="summary-chip">Upcoming: 0</span>
+        <span id="completed-count-chip" class="summary-chip">Completed: 0</span>
+      </div>
+    </section>
+
+    <section class="season-toolbar-card">
+      <div class="season-toolbar-grid">
+        <div>
+          <label class="season-toolbar-label" for="games-search-input">Search teams</label>
+          <input id="games-search-input" class="search-input" type="text" placeholder="Search by team name, city, or abbreviation...">
+        </div>
+        <div>
+          <label class="season-toolbar-label">Filter</label>
+          <div class="filter-pill-row" id="season-filter-row">
+            <button class="filter-pill active" type="button" data-filter="all">All</button>
+            <button class="filter-pill" type="button" data-filter="live">Live</button>
+            <button class="filter-pill" type="button" data-filter="upcoming">Upcoming</button>
+            <button class="filter-pill" type="button" data-filter="completed">Completed</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="season-games-list" class="season-games-list">
+      <div class="loading"><div class="spinner"></div>Loading season games...</div>
+    </div>
+  </main>
+
+  <script src="auth.js"></script>
+    <script src="games.js"></script>
+</body>
+</html>

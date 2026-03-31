@@ -6,43 +6,103 @@
   <title>Team Details | HoopWatch</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <nav class="navbar">
-    <a href="teams.html" class="back-link">← Back to Teams</a>
+
+<body class="team-detail-page">
+    <nav class="navbar detail-navbar">
+    <div class="nav-brand detail-nav-brand">
+      <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+      <div>
+        <div class="brand-name">HoopWatch</div>
+        <a href="teams.html" class="back-link detail-back-link">← Back</a>
+      </div>
+    </div>
+
+    <ul class="nav-menu">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="games.html">Season Games</a></li>
+      <li><a href="teams.html" class="active">Teams</a></li>
+      <li><a href="myfeed.html">My Feed</a></li>
+      <li><a href="qotd.html">QOTD</a></li>
+    </ul>
+    <div class="nav-actions nav-auth-slot"></div>
   </nav>
 
-  <div class="container">
-    <div class="team-header" id="team-header">
-      <div class="team-logo" id="team-logo">
-        <img id="team-logo-img" alt="Team Logo" referrerpolicy="no-referrer" decoding="async" loading="eager" style="width:120px;height:120px;object-fit:contain;display:none;">
-        <span id="team-logo-fallback">🏀</span>
+  <main class="container team-detail-shell">
+    <section class="team-hero-layout">
+      <div class="team-header team-hero-card" id="team-header">
+        <button id="favorite-team-btn" class="card-icon-btn team-favorite-btn" type="button" title="Add to favorites"
+          aria-label="Add to favorites">☆</button>
+
+        <div class="team-logo team-logo-hero" id="team-logo">
+          <img id="team-logo-img" alt="Team Logo" referrerpolicy="no-referrer" decoding="async" loading="eager"
+            style="width:120px;height:120px;object-fit:contain;display:none;">
+          <span id="team-logo-fallback">🏀</span>
+        </div>
+
+        <div class="team-hero-copy">
+          <div class="page-kicker">Franchise Overview</div>
+          <h1 id="team-name"></h1>
+          <div class="hero-pill-row">
+            <span id="team-record-pill" class="hero-pill hero-pill-primary">0W - 0L</span>
+            <span id="team-win-rate-pill" class="hero-pill">Win Rate: 0.0%</span>
+          </div>
+          <p id="team-arena" class="team-arena"></p>
+        </div>
       </div>
 
-      <div>
-        <h1 id="team-name"></h1>
-        <p id="team-record" class="team-record"></p>
-        <p id="team-win-rate" class="team-win-rate"></p>
-        <p id="team-arena" class="team-arena"></p>
+    </section>
+
+    <section class="detail-surface-card team-detail-tabs-card">
+      <div class="team-detail-tabs" role="tablist" aria-label="Team detail sections">
+        <button id="roster-tab-btn" class="team-tab-btn active" type="button" data-tab="roster" aria-selected="true">Roster</button>
+        <button id="games-tab-btn" class="team-tab-btn" type="button" data-tab="games" aria-selected="false">Games</button>
       </div>
-    </div>
+    </section>
 
-    <div class="roster-section">
-      <h2>Roster</h2>
-      <table class="roster-table">
-        <thead>
-          <tr>
-            <th style="width:64px;"> </th>
-            <th style="width:60px;">#</th>
-            <th>Player Name</th>
-            <th style="width:120px;">Position</th>
-            <th style="width:120px;">Height</th>
-          </tr>
-        </thead>
-        <tbody id="roster-tbody"></tbody>
-      </table>
-    </div>
-  </div>
+    <section id="roster-panel" class="roster-section detail-surface-card team-tab-panel active">
+      <div class="section-heading-row">
+        <div>
+          <div class="page-kicker">Depth Chart</div>
+          <h2>Roster</h2>
+        </div>
+      </div>
+      <div class="table-container roster-table-container">
+        <table class="roster-table">
+          <thead>
+            <tr>
+              <th style="width:72px;">Photo</th>
+              <th style="width:60px;">#</th>
+              <th>Player Name</th>
+              <th style="width:120px;">Position</th>
+              <th style="width:120px;">Height</th>
+            </tr>
+          </thead>
+          <tbody id="roster-tbody"></tbody>
+        </table>
+      </div>
+    </section>
 
-  <script src="team-detail.js"></script>
+    <section id="games-panel" class="roster-section detail-surface-card team-tab-panel">
+      <div class="section-heading-row team-games-heading-row">
+        <div>
+          <div class="page-kicker">Season Schedule</div>
+          <h2>Team Games</h2>
+        </div>
+        <div class="filter-pill-row team-games-filter-row" id="team-games-filter-row">
+          <button class="filter-pill active" type="button" data-team-games-filter="all">All</button>
+          <button class="filter-pill" type="button" data-team-games-filter="live">Live</button>
+          <button class="filter-pill" type="button" data-team-games-filter="upcoming">Upcoming</button>
+          <button class="filter-pill" type="button" data-team-games-filter="completed">Completed</button>
+        </div>
+      </div>
+      <div id="team-games-list" class="team-games-list">
+        <div class="loading">Loading team games...</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
+    <script src="team-detail.js"></script>
 </body>
+
 </html>

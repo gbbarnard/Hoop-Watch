@@ -8,17 +8,20 @@
 </head>
 
 <body>
-  <nav class="navbar">
-    <div class="nav-brand">
-      <img class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png" alt="HoopWatch" />
-      <span class="brand-name">HoopWatch</span>
-    </div>
-    <ul class="nav-menu">
-      <li><a href="index.html">Games</a></li>
-      <li><a href="teams.html" class="active">Teams</a></li>
-      <li><a href="qotd.html">QOTD</a></li>
-    </ul>
-  </nav>
+      <nav class="navbar">
+        <div class="nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <span class="brand-name">HoopWatch</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
+            <li><a href="teams.html" class="active">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+        </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+    </nav>
 
   <main class="container">
     <div class="hero-section" style="text-align:left;">
@@ -27,7 +30,8 @@
       <a href="index.html" class="back-link" style="margin-top:10px;">← Back to Games</a>
     </div>
 
-    <div style="background:#fff;padding:16px;border-radius:16px;margin-bottom:24px;border:1px solid var(--border-color);box-shadow:0 2px 10px rgba(0,0,0,0.06);">
+    <div
+      style="background:#fff;padding:16px;border-radius:16px;margin-bottom:24px;border:1px solid var(--border-color);box-shadow:0 2px 10px rgba(0,0,0,0.06);">
       <div style="display:grid;grid-template-columns: 1.8fr 1fr 1fr;gap:12px;align-items:end;">
         <div>
           <label for="searchInput" style="display:block;font-weight:700;margin-bottom:6px;">Search</label>
@@ -55,6 +59,8 @@
     <section id="teams" class="teams-grid"></section>
   </main>
 
-  <script src="teams.js"></script>
+  <script src="auth.js"></script>
+    <script src="teams.js"></script>
 </body>
+
 </html>
