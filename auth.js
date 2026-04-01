@@ -1,6 +1,42 @@
 const HOOPWATCH_AUTH_USER_KEY = 'hoopwatch_current_user';
 const HOOPWATCH_AUTH_TOKEN_KEY = 'hoopwatch_auth_token';
 const HOOPWATCH_USER_ID_KEY = 'hoopwatch_user_id';
+const HOOPWATCH_TOAST_MESSAGE_KEY = 'hoopwatch_toast_message';
+const HOOPWATCH_TOAST_TYPE_KEY = 'hoopwatch_toast_type';
+
+function showToast(message, type = 'success', duration = 2800) {
+  const container = document.querySelector('.toast-container') || (() => {
+    const el = document.createElement('div');
+    el.className = 'toast-container';
+    document.body.appendChild(el);
+    return el;
+  })();
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(16px)';
+    setTimeout(() => toast.remove(), 200);
+  }, duration);
+}
+
+function queueToast(message, type = 'success') {
+  sessionStorage.setItem(HOOPWATCH_TOAST_MESSAGE_KEY, message);
+  sessionStorage.setItem(HOOPWATCH_TOAST_TYPE_KEY, type);
+}
+
+function flushQueuedToast() {
+  const message = sessionStorage.getItem(HOOPWATCH_TOAST_MESSAGE_KEY);
+  if (!message) return;
+  const type = sessionStorage.getItem(HOOPWATCH_TOAST_TYPE_KEY) || 'success';
+  sessionStorage.removeItem(HOOPWATCH_TOAST_MESSAGE_KEY);
+  sessionStorage.removeItem(HOOPWATCH_TOAST_TYPE_KEY);
+  showToast(message, type);
+}
 
 function authEscapeHtml(value) {
   return String(value ?? '')
@@ -23,6 +59,10 @@ function readStoredAuthUser() {
 
 function readStoredAuthToken() {
   return localStorage.getItem(HOOPWATCH_AUTH_TOKEN_KEY) || '';
+}
+
+function isAdminUser(user = readStoredAuthUser()) {
+  return String(user?.role || '').toLowerCase() === 'admin';
 }
 
 function storeAuthSession(user, token) {
@@ -58,10 +98,15 @@ async function logoutAuthUser() {
   }
 
   clearAuthSession();
+  const message = 'You have successfully logged out.';
 
-  if (window.location.pathname.endsWith('/account.html')) {
+  if (window.location.pathname.endsWith('/account.html') || window.location.pathname.endsWith('/admin.html')) {
+    queueToast(message, 'success');
     window.location.href = 'login.html';
+    return;
   }
+
+  showToast(message, 'success');
 }
 
 function renderNavAuth() {
@@ -93,19 +138,26 @@ document.addEventListener('click', (event) => {
   }
 });
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', renderNavAuth);
-} else {
+function initAuthUI() {
   renderNavAuth();
+  flushQueuedToast();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAuthUI);
+} else {
+  initAuthUI();
 }
 
 window.HoopWatchAuth = {
   readStoredAuthUser,
   readStoredAuthToken,
+  isAdminUser,
   storeAuthSession,
   clearAuthSession,
   logoutAuthUser,
   renderNavAuth,
+  queueToast,
   HOOPWATCH_AUTH_USER_KEY,
   HOOPWATCH_AUTH_TOKEN_KEY,
   HOOPWATCH_USER_ID_KEY,

@@ -52,6 +52,11 @@
     let currentQuestionId = null;
     let allComments = [];
 
+    function isAdminViewer() {
+      const user = window.HoopWatchAuth?.readStoredAuthUser?.();
+      return window.HoopWatchAuth?.isAdminUser?.(user);
+  }
+
     dateInput.addEventListener("change", loadQuestion);
 
     function getMainUserId() {
@@ -148,6 +153,7 @@
       <button class="vote-btn" onclick="voteComment(${comment.comment_id}, 1)">▲ ${up}</button>
       <button class="vote-btn" onclick="voteComment(${comment.comment_id}, -1)">▼ ${down}</button>
       <button class="reply-btn" onclick="showReplyBox(${comment.comment_id}, this)">Reply</button>
+      ${isAdminViewer() ? `<button class="delete-btn" onclick="deleteComment(${comment.comment_id})">🗑️</button>` : ""}
     </div>
 
     <div class="replies"></div>
@@ -251,6 +257,34 @@
       }
 
       loadComments();
+    }
+
+    async function deleteComment(commentId) {
+      const user = window.HoopWatchAuth?.readStoredAuthUser?.();
+      const token = window.HoopWatchAuth?.readStoredAuthToken?.();
+
+      if (!window.HoopWatchAuth?.isAdminUser?.(user)) {
+        alert("Only admins can delete comments.");
+        return;
+      }
+
+      if (!confirm("Delete this comment?")) return;
+
+      const res = await fetch(`http://localhost:8000/api/admin/comments/qotd/${commentId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Error: " + (err.error || "Failed to delete"));
+        return;
+      }
+
+      loadComments(); // refresh UI
     }
 
     loadQuestion();

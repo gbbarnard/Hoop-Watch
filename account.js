@@ -6,6 +6,7 @@ const messageBox = document.getElementById('account-message');
 const accountForm = document.getElementById('account-form');
 const logoutButton = document.getElementById('account-logout-btn');
 const avatarBox = document.getElementById('account-avatar');
+const adminPanel = document.getElementById('account-admin-panel');
 
 function getAuthHeaders() {
   const token = window.HoopWatchAuth.readStoredAuthToken();
@@ -38,6 +39,16 @@ function setAvatarText(user) {
   avatarBox.textContent = initials || 'HW';
 }
 
+function syncAdminPanel(user) {
+  if (!adminPanel) return;
+
+  adminPanel.style.display = 'none';
+
+  if (user && window.HoopWatchAuth.isAdminUser(user)) {
+    adminPanel.style.display = 'block';
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
@@ -52,6 +63,7 @@ async function loadAccountProfile() {
   if (!user || !token) {
     lockedView.hidden = false;
     contentView.hidden = true;
+    syncAdminPanel(null);
     return;
   }
 
@@ -70,6 +82,7 @@ async function loadAccountProfile() {
     document.getElementById('account-email').value = profile.email || '';
     document.getElementById('account-bio').value = profile.bio || '';
     setAvatarText(profile);
+    syncAdminPanel(profile);
     window.HoopWatchAuth.storeAuthSession(profile, token);
   } catch (error) {
     showAccountMessage(error.message || 'Could not load account profile.');
@@ -85,6 +98,7 @@ accountForm?.addEventListener('submit', async (event) => {
   if (!user || !token) {
     lockedView.hidden = false;
     contentView.hidden = true;
+    syncAdminPanel(null);
     return;
   }
 
@@ -104,6 +118,7 @@ accountForm?.addEventListener('submit', async (event) => {
 
     window.HoopWatchAuth.storeAuthSession(updated, token);
     setAvatarText(updated);
+    syncAdminPanel(updated);
     document.getElementById('account-current-password').value = '';
     document.getElementById('account-new-password').value = '';
     showAccountMessage('Account updated successfully.', 'success');

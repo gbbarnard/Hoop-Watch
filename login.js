@@ -56,6 +56,7 @@ loginForm.addEventListener('submit', async (event) => {
     });
 
     window.HoopWatchAuth.storeAuthSession(result.user, result.token);
+    window.HoopWatchAuth.queueToast('Login successful!', 'success');
     window.location.href = 'account.html';
   } catch (error) {
     showAuthMessage(error.message || 'Could not log in.');
@@ -90,6 +91,7 @@ registerForm.addEventListener('submit', async (event) => {
     });
 
     window.HoopWatchAuth.storeAuthSession(result.user, result.token);
+    window.HoopWatchAuth.queueToast('Account created successfully!', 'success');
     window.location.href = 'account.html';
   } catch (error) {
     showAuthMessage(error.message || 'Could not create account.');
