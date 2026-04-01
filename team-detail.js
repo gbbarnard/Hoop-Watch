@@ -49,9 +49,12 @@ function showToast(message, type = 'success', duration = 2800) {
 }
 
 const favoriteTeamBtn = document.getElementById('favorite-team-btn');
+const initialTeamTab = new URLSearchParams(window.location.search).get('tab') === 'games' ? 'games' : 'roster';
 
 let currentTeam = null;
 let isFavorite = false;
+let teamGames = [];
+let activeTeamGamesFilter = 'all';
 
 function getFavoriteUserIdOrWarn() {
   let saved = String(readSavedUserId() || '').trim();
@@ -128,6 +131,150 @@ async function toggleFavoriteTeam() {
   }
 }
 
+
+function setActiveTab(tabName) {
+  document.querySelectorAll('.team-tab-btn').forEach((button) => {
+    const isActive = button.dataset.tab === tabName;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+
+  document.querySelectorAll('.team-tab-panel').forEach((panel) => {
+    const isActive = panel.id === `${tabName}-panel`;
+    panel.classList.toggle('active', isActive);
+  });
+}
+
+function formatTeamGameDate(dateString) {
+  if (!dateString) return 'Date TBD';
+  const date = new Date(`${dateString}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return dateString;
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function canOpenTeamGameDetail(game) {
+  return ['live', 'final'].includes(String(game?.status_key || ''));
+}
+
+function buildTeamGameDetailHref(game) {
+  const gameId = encodeURIComponent(String(game?.game_id || game?.gameId || ''));
+  const teamId = encodeURIComponent(String(currentTeam?.id || getTeamId() || ''));
+  return `game-detail.html?id=${gameId}&from=team-games&teamId=${teamId}`;
+}
+
+function getTeamPerspective(game) {
+  if (!currentTeam) return null;
+
+  const homeTeam = game.home_team || {};
+  const awayTeam = game.away_team || {};
+  const currentIds = [String(currentTeam.id), String(currentTeam.nba_team_id)];
+  const isHome = currentIds.includes(String(homeTeam.id)) || currentIds.includes(String(homeTeam.nba_team_id));
+  const opponent = isHome ? awayTeam : homeTeam;
+  const teamScore = isHome ? game.home_score : game.away_score;
+  const opponentScore = isHome ? game.away_score : game.home_score;
+  const won = game.status_key === 'final' && teamScore != null && opponentScore != null && Number(teamScore) > Number(opponentScore);
+  const lost = game.status_key === 'final' && teamScore != null && opponentScore != null && Number(teamScore) < Number(opponentScore);
+
+  return {
+    isHome,
+    opponent,
+    teamScore,
+    opponentScore,
+    won,
+    lost,
+  };
+}
+
+function getFilteredTeamGames() {
+  if (activeTeamGamesFilter === 'all') return teamGames;
+  if (activeTeamGamesFilter === 'completed') return teamGames.filter((game) => game.status_key === 'final');
+  const mappedFilter = activeTeamGamesFilter === 'upcoming' ? 'scheduled' : activeTeamGamesFilter;
+  return teamGames.filter((game) => game.status_key === mappedFilter);
+}
+
+function renderTeamGames() {
+  const container = document.getElementById('team-games-list');
+  if (!container) return;
+
+  const games = getFilteredTeamGames();
+  if (!Array.isArray(games) || games.length === 0) {
+    container.innerHTML = '<div class="no-games">No games matched that filter.</div>';
+    return;
+  }
+
+  const cards = games.map((game) => {
+    const view = getTeamPerspective(game);
+    const homeTeam = game.home_team || {};
+    const awayTeam = game.away_team || {};
+    const statusKey = game.status_key === 'scheduled' ? 'upcoming' : (game.status_key || 'upcoming');
+    const statusText = game.status_key === 'scheduled' ? 'Upcoming' : (game.status || 'Upcoming');
+    const homeScore = game.home_score !== null && game.home_score !== undefined ? game.home_score : '-';
+    const awayScore = game.away_score !== null && game.away_score !== undefined ? game.away_score : '-';
+    const homeRecord = homeTeam.wins !== undefined ? `${homeTeam.wins}W - ${homeTeam.losses}L` : '';
+    const awayRecord = awayTeam.wins !== undefined ? `${awayTeam.wins}W - ${awayTeam.losses}L` : '';
+    const homeId = homeTeam.id || homeTeam.nba_team_id || '';
+    const awayId = awayTeam.id || awayTeam.nba_team_id || '';
+    const summary = view?.isHome ? `vs ${view?.opponent?.abbreviation || view?.opponent?.full_name || 'Opponent'}` : `@ ${view?.opponent?.abbreviation || view?.opponent?.full_name || 'Opponent'}`;
+
+    const detailHref = canOpenTeamGameDetail(game) ? buildTeamGameDetailHref(game) : '';
+
+    return `
+      <div class="game-card season-game-card team-tab-game-card ${detailHref ? 'clickable-game-card' : ''}" ${detailHref ? `data-detail-href="${escapeHtml(detailHref)}" role="link" tabindex="0"` : ''}>
+        <span class="game-status ${escapeHtml(statusKey)}">${escapeHtml(statusText)}</span>
+        <div class="game-time">${escapeHtml(game.game_time || 'TBD')}</div>
+        <div class="team-game-context">${escapeHtml(formatTeamGameDate(game.game_date))} • ${escapeHtml(summary)}</div>
+        <div class="game-teams">
+          <div class="team">
+            <img src="${escapeHtml(awayTeam.logo_url || `https://cdn.nba.com/logos/nba/${awayTeam.nba_team_id}/primary/L/logo.svg`)}" alt="${escapeHtml(awayTeam.full_name || 'Away Team')}" class="team-logo" />
+            <div class="team-name">${escapeHtml(awayTeam.full_name || 'Away Team')}</div>
+            ${awayRecord ? `<div class="team-record">${escapeHtml(awayRecord)}</div>` : ''}
+            <div class="team-score">${escapeHtml(awayScore)}</div>
+          </div>
+          <div class="vs">VS</div>
+          <div class="team">
+            <img src="${escapeHtml(homeTeam.logo_url || `https://cdn.nba.com/logos/nba/${homeTeam.nba_team_id}/primary/L/logo.svg`)}" alt="${escapeHtml(homeTeam.full_name || 'Home Team')}" class="team-logo" />
+            <div class="team-name">${escapeHtml(homeTeam.full_name || 'Home Team')}</div>
+            ${homeRecord ? `<div class="team-record">${escapeHtml(homeRecord)}</div>` : ''}
+            <div class="team-score">${escapeHtml(homeScore)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `<div class="games-container team-games-card-grid">${cards}</div>`;
+}
+
+async function fetchTeamGames(teamId) {
+  const container = document.getElementById('team-games-list');
+  if (container) {
+    container.innerHTML = '<div class="loading">Loading team games...</div>';
+  }
+
+  try {
+    teamGames = await fetchJson(`${API_BASE}/api/teams/${teamId}/games`);
+    renderTeamGames();
+  } catch (error) {
+    console.error('Team games error:', error);
+    if (container) {
+      container.innerHTML = `<div class="error">Could not load team games: ${error.message}</div>`;
+    }
+  }
+}
+
 async function fetchTeamData() {
   const rawId = getTeamId();
   if (!rawId) {
@@ -159,6 +306,8 @@ async function fetchTeamData() {
       }
     }
 
+    await fetchTeamGames(internalId);
+
   } catch (error) {
     if (isLikelyNbaId) {
       try {
@@ -177,14 +326,14 @@ async function fetchTeamData() {
           try {
             const players = await fetchJson(`${API_BASE}/api/teams/${internalId}/players`);
             displayRoster(players);
-            return;
           } catch (rosterErr) {
             console.error("Roster error:", rosterErr);
             if (tbody) {
               tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">Roster unavailable. Backend error: <code>${rosterErr.message}</code></td></tr>`;
             }
-            return;
           }
+          await fetchTeamGames(internalId);
+          return;
         }
       } catch (e2) {
         console.error("NBA id resolve failed:", e2);
@@ -206,7 +355,9 @@ function handleBackButton() {
 
   if (!backLink) return;
 
-  if (from === "games") {
+  if (from === "season-games") {
+    backLink.href = "games.html";
+  } else if (from === "live-games" || from === "games") {
     backLink.href = "index.html";
   } else {
     backLink.href = "teams.html";
@@ -318,7 +469,44 @@ function displayRoster(players) {
   });
 }
 
-favoriteTeamBtn.addEventListener('click', toggleFavoriteTeam);
+if (favoriteTeamBtn) {
+  favoriteTeamBtn.addEventListener('click', toggleFavoriteTeam);
+}
+
+document.addEventListener('click', (event) => {
+  const tabButton = event.target.closest('.team-tab-btn[data-tab]');
+  if (tabButton) {
+    setActiveTab(tabButton.dataset.tab);
+    return;
+  }
+
+  const filterButton = event.target.closest('.filter-pill[data-team-games-filter]');
+  if (filterButton) {
+    activeTeamGamesFilter = filterButton.dataset.teamGamesFilter;
+    document.querySelectorAll('.filter-pill[data-team-games-filter]').forEach((button) => {
+      button.classList.toggle('active', button === filterButton);
+    });
+    renderTeamGames();
+    return;
+  }
+
+  const detailCard = event.target.closest('.clickable-game-card[data-detail-href]');
+  if (detailCard) {
+    if (event.target.closest('a, button')) return;
+    window.location.href = detailCard.dataset.detailHref;
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  const detailCard = event.target.closest('.clickable-game-card[data-detail-href]');
+  if (!detailCard) return;
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  window.location.href = detailCard.dataset.detailHref;
+});
+
+setActiveTab(initialTeamTab);
+handleBackButton();
 updateFavoriteButton();
 fetchTeamData();
 handleBackButton();

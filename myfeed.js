@@ -2,7 +2,6 @@ const API_BASE = "http://localhost:8000";
 const USER_ID_STORAGE_KEY = "hoopwatch_user_id";
 
 const userChip = document.getElementById("myfeed-user-chip");
-const changeUserBtn = document.getElementById("change-user-btn");
 
 const repliesList = document.getElementById("comment-replies-list");
 const favoritesList = document.getElementById("favorites-list");
@@ -24,23 +23,35 @@ function readSavedUserId() {
     return localStorage.getItem(USER_ID_STORAGE_KEY) || "";
 }
 
-function promptForUserId() {
-    const entered = window.prompt("Enter your demo user ID to load My Feed. Example: 2");
-    const userId = Number(String(entered || "").trim());
-
-    if (!userId || userId < 1) {
-        alert("A valid user ID is required to open My Feed.");
-        return null;
-    }
-
-    localStorage.setItem(USER_ID_STORAGE_KEY, String(userId));
-    return userId;
-}
-
 function getActiveUserId() {
     const saved = Number(String(readSavedUserId()).trim());
     if (saved > 0) return saved;
-    return promptForUserId();
+    return null;
+}
+
+function getSignedInName() {
+    try {
+        const raw = localStorage.getItem('hoopwatch_current_user');
+        const user = raw ? JSON.parse(raw) : null;
+        return user?.display_name || user?.username || user?.email || null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function renderLoginRequiredState() {
+    const loginMarkup = `
+        <div class="myfeed-empty">
+            Please log in to view your feed.
+            <div style="margin-top:12px;">
+                <a href="login.html" class="myfeed-secondary-btn">Log In</a>
+            </div>
+        </div>
+    `;
+    repliesList.innerHTML = loginMarkup;
+    favoritesList.innerHTML = loginMarkup;
+    watchlistList.innerHTML = loginMarkup;
+    alertsList.innerHTML = loginMarkup;
 }
 
 async function fetchJson(url, options = {}) {
@@ -356,14 +367,12 @@ window.removeFavoriteTeam = removeFavoriteTeam;
 async function loadMyFeed() {
     const userId = getActiveUserId();
     if (!userId) {
-        repliesList.innerHTML = renderEmptyState("Set a user ID to load My Feed.");
-        favoritesList.innerHTML = renderEmptyState("Set a user ID to load My Feed.");
-        watchlistList.innerHTML = renderEmptyState("Set a user ID to load My Feed.");
-        alertsList.innerHTML = renderEmptyState("Set a user ID to load My Feed.");
+        userChip.textContent = "Signed in: Guest";
+        renderLoginRequiredState();
         return;
     }
 
-    userChip.textContent = `User ID: ${userId}`;
+    userChip.textContent = `Signed in: ${escapeHtml(getSignedInName() || `User ${userId}`)}`;
     repliesList.innerHTML = '<div class="loading">Loading feed...</div>';
     favoritesList.innerHTML = '<div class="loading">Loading favorites...</div>';
     watchlistList.innerHTML = '<div class="loading">Loading watchlist...</div>';
@@ -383,11 +392,5 @@ async function loadMyFeed() {
         alertsList.innerHTML = `<div class="myfeed-empty">${message}</div>`;
     }
 }
-
-changeUserBtn.addEventListener("click", () => {
-    localStorage.removeItem(USER_ID_STORAGE_KEY);
-    const nextUserId = promptForUserId();
-    if (nextUserId) loadMyFeed();
-});
 
 loadMyFeed();

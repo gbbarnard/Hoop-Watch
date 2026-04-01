@@ -45,8 +45,93 @@ const commentDisplayNameInput = document.getElementById('comment-display-name');
 let currentGame = null;
 let commentsRefreshTimer = null;
 
+function getBackLinkInfo() {
+    const from = urlParams.get('from');
+    const teamId = urlParams.get('teamId');
+
+    if (from === 'season-games') {
+        return { href: 'games.html', label: '← Back to Season Games' };
+    }
+
+    if (from === 'team-games' && teamId) {
+        return { href: `team-detail.html?id=${encodeURIComponent(teamId)}&tab=games`, label: '← Back to Team Games' };
+    }
+
+    return { href: 'index.html', label: '← Back to Home' };
+}
+
+function applyBackLink() {
+    const backLink = document.querySelector('.detail-back-link');
+    if (!backLink) return;
+    const info = getBackLinkInfo();
+    backLink.href = info.href;
+    backLink.textContent = info.label;
+}
+
 if (!gameId) {
-    window.location.href = 'index.html';
+    window.location.href = getBackLinkInfo().href;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '\'': '&#39;',
+        '"': '&quot;'
+    }[char]));
+}
+
+function parseGameClock(clock) {
+    if (!clock || !clock.startsWith('PT')) return clock;
+
+    const match = clock.match(/PT(\d+)M(\d+(?:\.\d+)?)S/);
+    if (!match) return clock;
+
+    const minutes = parseInt(match[1], 10);
+    const seconds = Math.floor(parseFloat(match[2]));
+
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function readSavedUserId() {
+    return localStorage.getItem(USER_ID_STORAGE_KEY) || '';
+}
+
+function readSavedDisplayName() {
+    return localStorage.getItem(DISPLAY_NAME_STORAGE_KEY) || '';
+}
+
+function ensureUserId() {
+    const saved = Number(String(readSavedUserId()).trim());
+    if (saved > 0) return saved;
+
+    alert('Please log in to post comments.');
+    window.location.href = 'login.html';
+    return null;
+}
+
+function persistDisplayName() {
+    const value = String(commentDisplayNameInput.value || '').trim();
+    if (value) localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, value);
+    else localStorage.removeItem(DISPLAY_NAME_STORAGE_KEY);
+}
+
+function formatCommentDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
+}
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const message = data?.error || data?.message || `Request failed (${response.status})`;
+        throw new Error(message);
+    }
+    return data;
 }
 
 function escapeHtml(value) {
@@ -126,11 +211,12 @@ async function fetchGameDetail() {
         await loadGameComments();
     } catch (error) {
         console.error('Error fetching game detail:', error);
+        const backLink = getBackLinkInfo();
         document.querySelector('.container').innerHTML = `
             <div class="error-message">
                 <h2>Game data not available</h2>
                 <p>This game may not have started yet or the data is unavailable.</p>
-                <a href="index.html" class="btn">Back to Games</a>
+                <a href="${backLink.href}" class="btn">${backLink.label.replace('← ', '')}</a>
             </div>
         `;
     }
@@ -569,3 +655,4 @@ fetchGameDetail();
 startCommentRefreshLoop();
 setInterval(fetchGameDetail, 50000);
 
+applyBackLink();

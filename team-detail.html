@@ -8,14 +8,23 @@
 </head>
 
 <body class="team-detail-page">
-  <nav class="navbar detail-navbar">
-    <div class="nav-content detail-nav-content">
-      <a href="index.html" class="logo detail-logo">
-        <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
-        <span>HoopWatch</span><br>
-        <a href="teams.html" class="back-link detail-back-link">← Back to Teams</a>
-      </a>
+    <nav class="navbar detail-navbar">
+    <div class="nav-brand detail-nav-brand">
+      <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+      <div>
+        <div class="brand-name">HoopWatch</div>
+        <a href="teams.html" class="back-link detail-back-link">← Back</a>
+      </div>
     </div>
+
+    <ul class="nav-menu">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="games.html">Season Games</a></li>
+      <li><a href="teams.html" class="active">Teams</a></li>
+      <li><a href="myfeed.html">My Feed</a></li>
+      <li><a href="qotd.html">QOTD</a></li>
+    </ul>
+    <div class="nav-actions nav-auth-slot"></div>
   </nav>
 
   <main class="container team-detail-shell">
@@ -43,7 +52,14 @@
 
     </section>
 
-    <section class="roster-section detail-surface-card">
+    <section class="detail-surface-card team-detail-tabs-card">
+      <div class="team-detail-tabs" role="tablist" aria-label="Team detail sections">
+        <button id="roster-tab-btn" class="team-tab-btn active" type="button" data-tab="roster" aria-selected="true">Roster</button>
+        <button id="games-tab-btn" class="team-tab-btn" type="button" data-tab="games" aria-selected="false">Games</button>
+      </div>
+    </section>
+
+    <section id="roster-panel" class="roster-section detail-surface-card team-tab-panel active">
       <div class="section-heading-row">
         <div>
           <div class="page-kicker">Depth Chart</div>
@@ -65,9 +81,28 @@
         </table>
       </div>
     </section>
+
+    <section id="games-panel" class="roster-section detail-surface-card team-tab-panel">
+      <div class="section-heading-row team-games-heading-row">
+        <div>
+          <div class="page-kicker">Season Schedule</div>
+          <h2>Team Games</h2>
+        </div>
+        <div class="filter-pill-row team-games-filter-row" id="team-games-filter-row">
+          <button class="filter-pill active" type="button" data-team-games-filter="all">All</button>
+          <button class="filter-pill" type="button" data-team-games-filter="live">Live</button>
+          <button class="filter-pill" type="button" data-team-games-filter="upcoming">Upcoming</button>
+          <button class="filter-pill" type="button" data-team-games-filter="completed">Completed</button>
+        </div>
+      </div>
+      <div id="team-games-list" class="team-games-list">
+        <div class="loading">Loading team games...</div>
+      </div>
+    </section>
   </main>
 
-  <script src="team-detail.js"></script>
+  <script src="auth.js"></script>
+    <script src="team-detail.js"></script>
 </body>
 
 </html>

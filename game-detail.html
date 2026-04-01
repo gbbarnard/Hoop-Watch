@@ -7,21 +7,23 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-content">
-            <a href="index.html" class="logo">
-                <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
-                <span>HoopWatch</span><br>
-                <a href="index.html" class="back-link">← Back to Games</a
-            </a>
+        <nav class="navbar detail-navbar">
+        <div class="nav-brand detail-nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <div>
+                <div class="brand-name">HoopWatch</div>
+                <a href="index.html" class="back-link detail-back-link">← Back to Home</a>
+            </div>
         </div>
 
         <ul class="nav-menu">
-            <li><a href="index.html" class="active">Games</a></li>
+            <li><a href="index.html" class="active">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
             <li><a href="teams.html">Teams</a></li>
             <li><a href="myfeed.html">My Feed</a></li>
             <li><a href="qotd.html">QOTD</a></li>
         </ul>
+    <div class="nav-actions nav-auth-slot"></div>
     </nav>
 
     <main class="container">
@@ -82,6 +84,7 @@
         </section>
     </main>
 
+    <script src="auth.js"></script>
     <script src="game-detail.js"></script>
 </body>
 

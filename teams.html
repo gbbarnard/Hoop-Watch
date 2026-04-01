@@ -8,18 +8,20 @@
 </head>
 
 <body>
-  <nav class="navbar">
-    <div class="nav-brand">
-      <img class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png" alt="HoopWatch" />
-      <span class="brand-name">HoopWatch</span>
-    </div>
-    <ul class="nav-menu">
-      <li><a href="index.html">Games</a></li>
-      <li><a href="teams.html" class="active">Teams</a></li>
-      <li><a href="myfeed.html">My Feed</a></li>
-      <li><a href="qotd.html">QOTD</a></li>
-    </ul>
-  </nav>
+      <nav class="navbar">
+        <div class="nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <span class="brand-name">HoopWatch</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
+            <li><a href="teams.html" class="active">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+        </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+    </nav>
 
   <main class="container">
     <div class="hero-section" style="text-align:left;">
@@ -57,7 +59,8 @@
     <section id="teams" class="teams-grid"></section>
   </main>
 
-  <script src="teams.js"></script>
+  <script src="auth.js"></script>
+    <script src="teams.js"></script>
 </body>
 
 </html>

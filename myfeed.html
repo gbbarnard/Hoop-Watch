@@ -9,18 +9,19 @@
 </head>
 
 <body>
-    <nav class="navbar">
+        <nav class="navbar">
         <div class="nav-brand">
-            <img class="logo-img" src="HoopWatch.png" alt="HoopWatch" />
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
             <span class="brand-name">HoopWatch</span>
         </div>
         <ul class="nav-menu">
-            <li><a href="index.html">Games</a></li>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
             <li><a href="teams.html">Teams</a></li>
             <li><a href="myfeed.html" class="active">My Feed</a></li>
             <li><a href="qotd.html">QOTD</a></li>
-
         </ul>
+    <div class="nav-actions nav-auth-slot"></div>
     </nav>
 
     <main class="container">
@@ -28,8 +29,7 @@
             <h1>My Feed</h1>
             <p>Your personalized HoopWatch activity in one place.</p>
             <div class="myfeed-userbar">
-                <div id="myfeed-user-chip" class="myfeed-user-chip">User ID: --</div>
-                <button id="change-user-btn" class="myfeed-secondary-btn" type="button">Change User ID</button>
+                <div id="myfeed-user-chip" class="myfeed-user-chip">Signed in: --</div>
             </div>
         </section>
 
@@ -80,6 +80,7 @@
         </section>
     </main>
 
+    <script src="auth.js"></script>
     <script src="myfeed.js"></script>
 </body>
 

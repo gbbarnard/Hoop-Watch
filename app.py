@@ -4,9 +4,11 @@ Connects to hoopwatch MySQL database and serves team/player data
 """
 
 import os
+import json
 import datetime
 import re
 import time
+import secrets
 import requests
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -15,9 +17,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, jsonify, send_from_directory, request
+from functools import wraps
 from flask_cors import CORS
 import mysql.connector
 from mysql.connector import Error
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from nba_api.live.nba.endpoints import scoreboard
 from nba_api.stats.static import teams
@@ -39,6 +43,352 @@ db_config = {
     "database": os.environ.get("MYSQL_DATABASE") or os.environ.get("MYSQL_DB") or "hoopwatch",
 }
 
+GAME_DETAIL_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "game_detail_cache")
+os.makedirs(GAME_DETAIL_CACHE_DIR, exist_ok=True)
+GAME_DETAIL_BOX_CACHE = {}
+AUTH_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
+AUTH_SESSIONS = {}
+
+
+def _make_json_safe(value):
+    if isinstance(value, dict):
+        return {key: _make_json_safe(val) for key, val in value.items()}
+
+    if isinstance(value, list):
+        return [_make_json_safe(item) for item in value]
+
+    if isinstance(value, tuple):
+        return [_make_json_safe(item) for item in value]
+
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+
+    if isinstance(value, datetime.timedelta):
+        total_seconds = int(value.total_seconds())
+        sign = '-' if total_seconds < 0 else ''
+        total_seconds = abs(total_seconds)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    return value
+
+def _stable_daily_index(seed_text, length):
+    if length <= 0:
+        return 0
+    return sum(ord(char) for char in str(seed_text or '')) % length
+
+
+def _normalize_live_status(game_status, status_text):
+    text = str(status_text or '').strip()
+    if game_status == 2:
+        return 'live', 'Live', text or 'Live'
+    if game_status == 3:
+        return 'final', 'Final', 'Final'
+    return 'scheduled', 'Upcoming', text or 'Upcoming'
+
+
+def _merge_live_updates_into_games(schedule_games):
+    if not schedule_games:
+        return []
+
+    try:
+        live_games = fetch_live_games() or []
+    except Exception as exc:
+        print(f"Live scoreboard merge skipped: {exc}")
+        live_games = []
+
+    if not live_games:
+        return schedule_games
+
+    live_by_game_id = {}
+    for live_game in live_games:
+        live_game_id = str(live_game.get('gameId') or '').strip()
+        if live_game_id:
+            live_by_game_id[live_game_id] = live_game
+
+    merged_games = []
+    for schedule_game in schedule_games:
+        game_copy = dict(schedule_game)
+        lookup_id = str(
+            game_copy.get('game_id')
+            or game_copy.get('gameId')
+            or game_copy.get('nba_game_id')
+            or ''
+        ).strip()
+        live_game = live_by_game_id.get(lookup_id)
+        if not live_game:
+            merged_games.append(game_copy)
+            continue
+
+        home_live = live_game.get('homeTeam', {}) or {}
+        away_live = live_game.get('awayTeam', {}) or {}
+
+        def live_team_for(base_team, default_live_team):
+            base_nba_team_id = str((base_team or {}).get('nba_team_id') or '').strip()
+            if base_nba_team_id:
+                if str(home_live.get('teamId') or '').strip() == base_nba_team_id:
+                    return home_live
+                if str(away_live.get('teamId') or '').strip() == base_nba_team_id:
+                    return away_live
+            return default_live_team
+
+        def merge_team(base_team, live_team):
+            team_payload = dict(base_team or {})
+            if not live_team:
+                return team_payload
+
+            live_city = str(live_team.get('teamCity') or '').strip()
+            live_name = str(live_team.get('teamName') or '').strip()
+            live_full_name = f"{live_city} {live_name}".strip()
+            if live_full_name:
+                team_payload['full_name'] = live_full_name
+
+            live_abbreviation = str(live_team.get('teamTricode') or '').strip()
+            if live_abbreviation:
+                team_payload['abbreviation'] = live_abbreviation
+
+            live_wins = _safe_int(live_team.get('wins'))
+            live_losses = _safe_int(live_team.get('losses'))
+            if live_wins is not None:
+                team_payload['wins'] = live_wins
+            if live_losses is not None:
+                team_payload['losses'] = live_losses
+
+            return team_payload
+
+        game_status = _safe_int(live_game.get('gameStatus'))
+        status_key, status_label, game_time = _normalize_live_status(
+            game_status,
+            live_game.get('gameStatusText'),
+        )
+
+        game_copy['gameStatus'] = game_status
+        game_copy['status_key'] = status_key
+        game_copy['status'] = status_label
+        game_copy['game_time'] = game_time
+        game_copy['is_live'] = status_key == 'live'
+        game_copy['is_completed'] = status_key == 'final'
+        game_copy['is_upcoming'] = status_key == 'scheduled'
+        game_copy['home_score'] = _safe_int(home_live.get('score'))
+        game_copy['away_score'] = _safe_int(away_live.get('score'))
+        game_copy['home_team'] = merge_team(game_copy.get('home_team'), live_team_for(game_copy.get('home_team'), home_live))
+        game_copy['away_team'] = merge_team(game_copy.get('away_team'), live_team_for(game_copy.get('away_team'), away_live))
+
+        home_score = game_copy.get('home_score')
+        away_score = game_copy.get('away_score')
+        if home_score is not None and away_score is not None and home_score != away_score:
+            if home_score > away_score:
+                game_copy['winner_team_id'] = (game_copy.get('home_team') or {}).get('id')
+                game_copy['loser_team_id'] = (game_copy.get('away_team') or {}).get('id')
+                game_copy['winner_side'] = 'home'
+            else:
+                game_copy['winner_team_id'] = (game_copy.get('away_team') or {}).get('id')
+                game_copy['loser_team_id'] = (game_copy.get('home_team') or {}).get('id')
+                game_copy['winner_side'] = 'away'
+
+        merged_games.append(game_copy)
+
+    return merged_games
+
+
+def _games_for_date(date_string):
+    try:
+        games = _fetch_regular_season_schedule_from_cdn()
+        filtered_games = [game for game in games if str(game.get('game_date') or '') == str(date_string or '')]
+        filtered_games = _merge_live_updates_into_games(filtered_games)
+        filtered_games.sort(key=lambda game: ((game.get('status_key') != 'live'), (game.get('start_time') or '99:99:99'), game.get('game_id') or ''))
+        if filtered_games:
+            return filtered_games
+    except Exception as exc:
+        print(f"Schedule fetch failed for {date_string}, falling back to DB cache: {exc}")
+
+    fallback_games = _fetch_games_for_date_from_db(date_string)
+    fallback_games = _merge_live_updates_into_games(fallback_games)
+    fallback_games.sort(key=lambda game: ((game.get('status_key') != 'live'), (game.get('start_time') or '99:99:99'), game.get('game_id') or ''))
+    return fallback_games
+
+
+def _choose_featured_game(date_string, games, preferred_game_ids=None):
+    preferred_set = {str(game_id).strip() for game_id in (preferred_game_ids or []) if str(game_id).strip()}
+    if preferred_set:
+        for game in games:
+            game_ids = {
+                str(game.get('game_id') or '').strip(),
+                str(game.get('gameId') or '').strip(),
+                str(game.get('nba_game_id') or '').strip(),
+            }
+            if preferred_set.intersection(game_ids):
+                return game
+
+    if not games:
+        return None
+
+    return games[_stable_daily_index(date_string, len(games))]
+
+
+def _db_status_payload(raw_status, start_time=None):
+    status_key = str(raw_status or 'scheduled').strip().lower()
+    if status_key in ('upcoming', 'pre', 'pregame'):
+        status_key = 'scheduled'
+    if status_key not in ('scheduled', 'live', 'final'):
+        status_key = 'scheduled'
+
+    if status_key == 'live':
+        status_label = 'Live'
+        game_time = 'Live'
+    elif status_key == 'final':
+        status_label = 'Final'
+        game_time = 'Final'
+    else:
+        status_label = 'Upcoming'
+        game_time = start_time or 'TBD'
+
+    return status_key, status_label, game_time
+
+
+def _fetch_games_for_date_from_db(date_string):
+    connection = get_db_connection()
+    if not connection:
+        return []
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        latest_cache_join = ''
+        if _table_exists(cursor, 'game_cache'):
+            latest_cache_join = """
+                LEFT JOIN (
+                    SELECT gc1.game_id, gc1.home_score, gc1.away_score, gc1.fetched_at
+                    FROM game_cache gc1
+                    JOIN (
+                        SELECT game_id, MAX(fetched_at) AS max_fetched_at
+                        FROM game_cache
+                        GROUP BY game_id
+                    ) latest_gc
+                      ON latest_gc.game_id = gc1.game_id
+                     AND latest_gc.max_fetched_at = gc1.fetched_at
+                ) gc ON gc.game_id = g.game_id
+            """
+        else:
+            latest_cache_join = "LEFT JOIN (SELECT NULL AS game_id, NULL AS home_score, NULL AS away_score, NULL AS fetched_at) gc ON 1 = 0"
+
+        cursor.execute(
+            f"""
+            SELECT
+                g.game_id,
+                g.nba_game_id,
+                g.game_date,
+                g.start_time,
+                g.status,
+                g.home_team_id,
+                g.away_team_id,
+                ht.nba_team_id AS home_nba_team_id,
+                ht.city AS home_city,
+                ht.name AS home_name,
+                ht.abbreviation AS home_abbreviation,
+                ht.logo_url AS home_logo_url,
+                at.nba_team_id AS away_nba_team_id,
+                at.city AS away_city,
+                at.name AS away_name,
+                at.abbreviation AS away_abbreviation,
+                at.logo_url AS away_logo_url,
+                COALESCE(ts_home.wins, 0) AS home_wins,
+                COALESCE(ts_home.losses, 0) AS home_losses,
+                COALESCE(ts_away.wins, 0) AS away_wins,
+                COALESCE(ts_away.losses, 0) AS away_losses,
+                gc.home_score,
+                gc.away_score
+            FROM games g
+            JOIN teams ht ON ht.team_id = g.home_team_id
+            JOIN teams at ON at.team_id = g.away_team_id
+            LEFT JOIN team_standings ts_home ON ts_home.team_id = ht.team_id
+            LEFT JOIN team_standings ts_away ON ts_away.team_id = at.team_id
+            {latest_cache_join}
+            WHERE g.game_date = %s
+            ORDER BY g.start_time ASC, g.game_id ASC
+            """,
+            (date_string,),
+        )
+
+        rows = cursor.fetchall() or []
+        games = []
+        for row in rows:
+            status_key, status_label, game_time = _db_status_payload(row.get('status'), row.get('start_time'))
+            home_score = row.get('home_score')
+            away_score = row.get('away_score')
+
+            winner_team_id = None
+            loser_team_id = None
+            winner_side = None
+            if home_score is not None and away_score is not None and home_score != away_score:
+                if int(home_score) > int(away_score):
+                    winner_team_id = row.get('home_team_id')
+                    loser_team_id = row.get('away_team_id')
+                    winner_side = 'home'
+                else:
+                    winner_team_id = row.get('away_team_id')
+                    loser_team_id = row.get('home_team_id')
+                    winner_side = 'away'
+
+            games.append({
+                'game_id': row.get('nba_game_id') or row.get('game_id'),
+                'gameId': row.get('nba_game_id') or row.get('game_id'),
+                'nba_game_id': row.get('nba_game_id'),
+                'gameStatus': status_label,
+                'status': status_label,
+                'status_key': status_key,
+                'game_time': game_time,
+                'game_date': row.get('game_date'),
+                'game_datetime': None,
+                'start_time': row.get('start_time'),
+                'arena_name': 'Arena TBD',
+                'home_team': {
+                    'id': row.get('home_team_id'),
+                    'team_id': row.get('home_team_id'),
+                    'nba_team_id': row.get('home_nba_team_id'),
+                    'city': row.get('home_city'),
+                    'name': row.get('home_name'),
+                    'full_name': f"{(row.get('home_city') or '').strip()} {(row.get('home_name') or '').strip()}".strip(),
+                    'abbreviation': row.get('home_abbreviation'),
+                    'logo_url': row.get('home_logo_url'),
+                    'wins': row.get('home_wins'),
+                    'losses': row.get('home_losses'),
+                },
+                'away_team': {
+                    'id': row.get('away_team_id'),
+                    'team_id': row.get('away_team_id'),
+                    'nba_team_id': row.get('away_nba_team_id'),
+                    'city': row.get('away_city'),
+                    'name': row.get('away_name'),
+                    'full_name': f"{(row.get('away_city') or '').strip()} {(row.get('away_name') or '').strip()}".strip(),
+                    'abbreviation': row.get('away_abbreviation'),
+                    'logo_url': row.get('away_logo_url'),
+                    'wins': row.get('away_wins'),
+                    'losses': row.get('away_losses'),
+                },
+                'home_score': home_score,
+                'away_score': away_score,
+                'winner_team_id': winner_team_id,
+                'loser_team_id': loser_team_id,
+                'winner_side': winner_side,
+                'is_completed': status_key == 'final',
+                'is_live': status_key == 'live',
+                'is_upcoming': status_key == 'scheduled',
+            })
+
+        cursor.close()
+        return games
+    except Exception as exc:
+        print(f"DB schedule fallback error for {date_string}: {exc}")
+        return []
+    finally:
+        connection.close()
+
 
 def get_db_connection():
     try:
@@ -49,8 +399,324 @@ def get_db_connection():
         return None
 
 
+def _fetch_table_columns(cursor, table_name):
+    cursor.execute(
+        """
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+        """,
+        (db_config.get('database'), table_name),
+    )
+
+    column_names = set()
+    for row in (cursor.fetchall() or []):
+        if isinstance(row, dict):
+            column_name = row.get('COLUMN_NAME')
+        else:
+            column_name = row[0] if row else None
+        if column_name:
+            column_names.add(column_name)
+
+    return column_names
+
+
+def _table_exists(cursor, table_name):
+    return bool(_fetch_table_columns(cursor, table_name))
+
+
+def _column_exists(cursor, table_name, column_name):
+    return column_name in _fetch_table_columns(cursor, table_name)
+
+
+def _optional_select(column_names, required, optional, fallback='NULL'):
+    select_parts = list(required)
+    for column_name in optional:
+        if column_name in column_names:
+            select_parts.append(column_name)
+        else:
+            select_parts.append(f"{fallback} AS {column_name}")
+    return ', '.join(select_parts)
+
+
+def ensure_admin_homepage_schema():
+    connection = get_db_connection()
+    if not connection:
+        return False
+
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_content (
+              content_date DATE PRIMARY KEY,
+              fact_text VARCHAR(500) NOT NULL DEFAULT '',
+              featured_game_id INT NULL,
+              admin_user_id INT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS teams_to_watch (
+              tw_id INT AUTO_INCREMENT PRIMARY KEY,
+              watch_date DATE NOT NULL,
+              team_id INT NOT NULL,
+              admin_user_id INT NULL,
+              UNIQUE KEY uq_tw (watch_date, team_id)
+            ) ENGINE=InnoDB
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS qotd_questions (
+              question_id INT AUTO_INCREMENT PRIMARY KEY,
+              admin_user_id INT NULL,
+              question_date DATE NOT NULL UNIQUE,
+              question_text VARCHAR(300) NOT NULL,
+              is_open BOOLEAN NOT NULL DEFAULT TRUE,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB
+            """
+        )
+
+        daily_columns = _fetch_table_columns(cursor, 'daily_content')
+        if 'admin_user_id' not in daily_columns:
+            cursor.execute("ALTER TABLE daily_content ADD COLUMN admin_user_id INT NULL")
+        if 'created_at' not in daily_columns:
+            cursor.execute("ALTER TABLE daily_content ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        if 'featured_game_id' not in daily_columns:
+            cursor.execute("ALTER TABLE daily_content ADD COLUMN featured_game_id INT NULL")
+        if 'fact_text' not in daily_columns:
+            cursor.execute("ALTER TABLE daily_content ADD COLUMN fact_text VARCHAR(500) NOT NULL DEFAULT ''")
+
+        teams_to_watch_columns = _fetch_table_columns(cursor, 'teams_to_watch')
+        if 'tw_id' not in teams_to_watch_columns:
+            cursor.execute("ALTER TABLE teams_to_watch ADD COLUMN tw_id INT AUTO_INCREMENT PRIMARY KEY FIRST")
+        if 'admin_user_id' not in teams_to_watch_columns:
+            cursor.execute("ALTER TABLE teams_to_watch ADD COLUMN admin_user_id INT NULL")
+
+        qotd_columns = _fetch_table_columns(cursor, 'qotd_questions')
+        if 'admin_user_id' not in qotd_columns:
+            cursor.execute("ALTER TABLE qotd_questions ADD COLUMN admin_user_id INT NULL")
+        if 'created_at' not in qotd_columns:
+            cursor.execute("ALTER TABLE qotd_questions ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        if 'is_open' not in qotd_columns:
+            cursor.execute("ALTER TABLE qotd_questions ADD COLUMN is_open BOOLEAN NOT NULL DEFAULT TRUE")
+
+        connection.commit()
+        cursor.close()
+        return True
+    except Exception as exc:
+        print(f"Admin homepage schema ensure error: {exc}")
+        return False
+    finally:
+        connection.close()
+
+
 # ================= NBA API FUNCTIONS =================
 
+
+
+
+def ensure_user_account_columns():
+    connection = get_db_connection()
+    if not connection:
+        return False
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'users'
+            """,
+            (db_config.get('database'),),
+        )
+        existing = {row[0] for row in (cursor.fetchall() or [])}
+
+        alter_statements = []
+        if 'username' not in existing:
+            alter_statements.append("ALTER TABLE users ADD COLUMN username VARCHAR(80) NULL UNIQUE AFTER email")
+        if 'display_name' not in existing:
+            alter_statements.append("ALTER TABLE users ADD COLUMN display_name VARCHAR(120) NULL AFTER username")
+        if 'bio' not in existing:
+            alter_statements.append("ALTER TABLE users ADD COLUMN bio TEXT NULL AFTER display_name")
+        if 'profile_image_url' not in existing:
+            alter_statements.append("ALTER TABLE users ADD COLUMN profile_image_url VARCHAR(500) NULL AFTER bio")
+
+        for statement in alter_statements:
+            cursor.execute(statement)
+
+        if alter_statements:
+            connection.commit()
+
+        cursor.close()
+        return True
+    except Exception as exc:
+        print(f"User account column ensure error: {exc}")
+        return False
+    finally:
+        connection.close()
+
+
+def _normalize_auth_user_row(row):
+    if not row:
+        return None
+
+    return {
+        'user_id': row.get('user_id'),
+        'email': row.get('email'),
+        'username': row.get('username'),
+        'display_name': row.get('display_name') or row.get('username') or row.get('email'),
+        'bio': row.get('bio') or '',
+        'profile_image_url': row.get('profile_image_url'),
+        'role': row.get('role') or 'base',
+    }
+
+
+def _issue_auth_token(user_id):
+    token = secrets.token_urlsafe(32)
+    AUTH_SESSIONS[token] = {
+        'user_id': int(user_id),
+        'created_at': time.time(),
+    }
+    return token
+
+
+def _get_authorized_user_id():
+    auth_header = request.headers.get('Authorization', '').strip()
+    token = ''
+
+    if auth_header.lower().startswith('bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+    elif request.headers.get('X-Auth-Token'):
+        token = request.headers.get('X-Auth-Token', '').strip()
+
+    if not token:
+        return None
+
+    session = AUTH_SESSIONS.get(token)
+    if not session:
+        return None
+
+    if time.time() - session.get('created_at', 0) > AUTH_SESSION_TTL_SECONDS:
+        AUTH_SESSIONS.pop(token, None)
+        return None
+
+    session['created_at'] = time.time()
+    return session.get('user_id')
+
+
+def _get_authorized_user():
+    user_id = _get_authorized_user_id()
+    if not user_id:
+        return None
+    return get_user_by_id(user_id)
+
+
+def admin_required(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        user = _get_authorized_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+        if str(user.get('role') or '').strip().lower() != 'admin':
+            return jsonify({'error': 'Admin access required'}), 403
+        return view_func(*args, **kwargs)
+
+    return wrapped
+
+
+def _get_or_create_default_admin_user(connection):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT user_id, email, username, display_name, bio, profile_image_url, password_hash, role
+            FROM users
+            WHERE username = %s OR email = %s
+            LIMIT 1
+            """,
+            ('admin', 'admin@hoopwatch.com'),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            needs_update = (
+                str(row.get('role') or '').lower() != 'admin'
+                or (row.get('email') or '').strip().lower() != 'admin@hoopwatch.com'
+                or (row.get('username') or '').strip().lower() != 'admin'
+                or (row.get('display_name') or '').strip() != 'Admin'
+                or not row.get('password_hash')
+            )
+            if needs_update:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET email = %s,
+                        username = %s,
+                        display_name = %s,
+                        bio = %s,
+                        password_hash = COALESCE(password_hash, %s),
+                        role = 'admin'
+                    WHERE user_id = %s
+                    """,
+                    ('admin@hoopwatch.com', 'admin', 'Admin', row.get('bio') or '', generate_password_hash('admin'), row.get('user_id')),
+                )
+                connection.commit()
+                cursor.execute(
+                    """
+                    SELECT user_id, email, username, display_name, bio, profile_image_url, password_hash, role
+                    FROM users
+                    WHERE user_id = %s
+                    LIMIT 1
+                    """,
+                    (row.get('user_id'),),
+                )
+                row = cursor.fetchone()
+
+            return row
+
+        cursor.execute(
+            """
+            INSERT INTO users (email, username, display_name, bio, password_hash, role)
+            VALUES (%s, %s, %s, %s, %s, 'admin')
+            """,
+            ('admin@hoopwatch.com', 'admin', 'Admin', '', generate_password_hash('admin')),
+        )
+        connection.commit()
+        admin_user_id = cursor.lastrowid
+        cursor.execute(
+            """
+            SELECT user_id, email, username, display_name, bio, profile_image_url, password_hash, role
+            FROM users
+            WHERE user_id = %s
+            LIMIT 1
+            """,
+            (admin_user_id,),
+        )
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+
+
+def _get_auth_user_by_identifier(cursor, identifier):
+    cursor.execute(
+        """
+        SELECT user_id, email, username, display_name, bio, profile_image_url, password_hash, role
+        FROM users
+        WHERE email = %s OR username = %s
+        LIMIT 1
+        """,
+        (identifier, identifier),
+    )
+    return cursor.fetchone()
 
 
 def get_user_by_id(user_id):
@@ -60,7 +726,8 @@ def get_user_by_id(user_id):
 
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute("SELECT user_id, email, role FROM users WHERE user_id = %s", (user_id,))
+        ensure_user_account_columns()
+        cursor.execute("SELECT user_id, email, username, display_name, bio, profile_image_url, role FROM users WHERE user_id = %s", (user_id,))
         row = cursor.fetchone()
         cursor.close()
         return row
@@ -107,6 +774,13 @@ def resolve_internal_game_id(game_identifier, create_from_live=True):
                 break
     except Exception as e:
         print(f"Live game backfill failed: {e}")
+
+    try:
+        schedule_game = _find_schedule_game_by_id(game_identifier)
+        if schedule_game:
+            _cache_schedule_game_record(schedule_game)
+    except Exception as e:
+        print(f"Schedule game backfill failed: {e}")
 
     connection = get_db_connection()
     if not connection:
@@ -726,6 +1400,326 @@ def _fetch_completed_regular_season_games_from_cdn_schedule():
     raise last_error or RuntimeError("CDN roster schedule fetch failed")
 
 
+
+
+def _safe_int(value):
+    try:
+        if value is None:
+            return None
+        s = str(value).strip()
+        if s == "":
+            return None
+        return int(float(s))
+    except Exception:
+        return None
+
+
+def _extract_date_string(*values):
+    for value in values:
+        if value is None:
+            continue
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", str(value))
+        if match:
+            return match.group(1)
+    return None
+
+
+def _extract_start_time(*values):
+    for value in values:
+        if value is None:
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+
+        try:
+            iso_candidate = raw.replace("Z", "+00:00")
+            dt = datetime.datetime.fromisoformat(iso_candidate)
+            return dt.strftime("%H:%M:%S")
+        except Exception:
+            pass
+
+        match = re.search(r"(\d{2}:\d{2})(?::(\d{2}))?", raw)
+        if match:
+            hhmm = match.group(1)
+            ss = match.group(2) or "00"
+            return f"{hhmm}:{ss}"
+
+    return None
+
+
+def _normalize_schedule_status(status_code, status_text, home_score=None, away_score=None):
+    status_text = str(status_text or "").strip()
+    lowered = status_text.lower()
+
+    if status_code == 3 or lowered.startswith("final"):
+        return "final", "Final"
+
+    if status_code == 2 or lowered.startswith("q") or "halftime" in lowered:
+        return "live", status_text or "Live"
+
+    if home_score is not None and away_score is not None and status_code not in (1, 2):
+        return "final", "Final"
+
+    return "scheduled", status_text or "Upcoming"
+
+
+def _load_team_lookup():
+    connection = get_db_connection()
+    if not connection:
+        raise RuntimeError("Database connection failed")
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                t.team_id,
+                t.nba_team_id,
+                t.name,
+                t.city,
+                t.abbreviation,
+                t.logo_url,
+                t.arena_name,
+                COALESCE(ts.wins, 0) AS wins,
+                COALESCE(ts.losses, 0) AS losses
+            FROM teams t
+            LEFT JOIN team_standings ts ON ts.team_id = t.team_id
+            """
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+    finally:
+        connection.close()
+
+    by_nba = {}
+    by_internal = {}
+    for row in rows:
+        nba_id = str(row.get("nba_team_id") or "").strip()
+        if nba_id:
+            by_nba[nba_id] = row
+        by_internal[str(row.get("team_id"))] = row
+
+    return {"by_nba": by_nba, "by_internal": by_internal}
+
+
+def _team_payload_from_schedule(raw_team, team_row):
+    city = (raw_team or {}).get("teamCity") or (team_row or {}).get("city") or ""
+    nickname = (raw_team or {}).get("teamName") or (team_row or {}).get("name") or "Team"
+    full_name = f"{city} {nickname}".strip()
+    abbreviation = (raw_team or {}).get("teamTricode") or (team_row or {}).get("abbreviation") or ""
+
+    return {
+        "id": (team_row or {}).get("team_id") or (raw_team or {}).get("teamId") or None,
+        "nba_team_id": (raw_team or {}).get("teamId") or (team_row or {}).get("nba_team_id") or None,
+        "full_name": full_name,
+        "abbreviation": abbreviation,
+        "wins": _safe_int((raw_team or {}).get("wins")) if (raw_team or {}).get("wins") not in (None, "") else _safe_int((team_row or {}).get("wins")) or 0,
+        "losses": _safe_int((raw_team or {}).get("losses")) if (raw_team or {}).get("losses") not in (None, "") else _safe_int((team_row or {}).get("losses")) or 0,
+        "logo_url": (team_row or {}).get("logo_url") or None,
+    }
+
+
+def _build_schedule_game_payload(game, game_date_block, team_lookup):
+    home_raw = game.get("homeTeam", {}) or {}
+    away_raw = game.get("awayTeam", {}) or {}
+
+    game_identifier = str(game.get("gameId", "") or game.get("gid", "")).strip()
+    if not game_identifier.startswith("002"):
+        return None
+
+    home_nba_id = str(home_raw.get("teamId", "") or home_raw.get("tid", "")).strip()
+    away_nba_id = str(away_raw.get("teamId", "") or away_raw.get("tid", "")).strip()
+    if not home_nba_id or not away_nba_id:
+        return None
+
+    home_team_row = team_lookup["by_nba"].get(home_nba_id)
+    away_team_row = team_lookup["by_nba"].get(away_nba_id)
+
+    home_score = _safe_int(home_raw.get("score", "") or home_raw.get("s", ""))
+    away_score = _safe_int(away_raw.get("score", "") or away_raw.get("s", ""))
+
+    raw_status = _safe_int(game.get("gameStatus"))
+    raw_status_text = str(game.get("gameStatusText", "") or game.get("stt", "") or game.get("st", "")).strip()
+    status_key, status_label = _normalize_schedule_status(raw_status, raw_status_text, home_score, away_score)
+
+    game_date = _extract_date_string(
+        game.get("gameDateEst"),
+        game.get("gameDate"),
+        game.get("gameEt"),
+        game.get("gameDateTimeEst"),
+        game.get("gameDateUTC"),
+        (game_date_block or {}).get("gameDate"),
+        (game_date_block or {}).get("gameDateString"),
+    )
+
+    game_datetime = (
+        game.get("gameEt")
+        or game.get("gameDateTimeEst")
+        or game.get("gameDateUTC")
+        or game.get("gameDateTimeUTC")
+        or None
+    )
+    start_time = _extract_start_time(
+        game_datetime,
+        game.get("gameTimeUTC"),
+        game.get("gameDateTimeUTC"),
+        game.get("gameDateTimeEst"),
+    )
+
+    home_payload = _team_payload_from_schedule(home_raw, home_team_row)
+    away_payload = _team_payload_from_schedule(away_raw, away_team_row)
+
+    winner_team_id = None
+    loser_team_id = None
+    winner_side = None
+    if home_score is not None and away_score is not None and home_score != away_score:
+        if home_score > away_score:
+            winner_team_id = home_payload["id"]
+            loser_team_id = away_payload["id"]
+            winner_side = "home"
+        else:
+            winner_team_id = away_payload["id"]
+            loser_team_id = home_payload["id"]
+            winner_side = "away"
+
+    return {
+        "game_id": game_identifier,
+        "gameId": game_identifier,
+        "nba_game_id": game_identifier,
+        "gameStatus": raw_status,
+        "status": status_label if status_key != "scheduled" else "Upcoming",
+        "status_key": status_key,
+        "game_time": raw_status_text or ("Final" if status_key == "final" else "TBD"),
+        "game_date": game_date,
+        "game_datetime": game_datetime,
+        "start_time": start_time,
+        "arena_name": (home_team_row or {}).get("arena_name") or "Arena TBD",
+        "home_team": home_payload,
+        "away_team": away_payload,
+        "home_score": home_score,
+        "away_score": away_score,
+        "winner_team_id": winner_team_id,
+        "loser_team_id": loser_team_id,
+        "winner_side": winner_side,
+        "is_completed": status_key == "final",
+        "is_live": status_key == "live",
+        "is_upcoming": status_key == "scheduled",
+    }
+
+
+def _fetch_regular_season_schedule_from_cdn():
+    urls = [
+        "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json",
+        "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json",
+    ]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": "https://www.nba.com/schedule",
+    }
+
+    team_lookup = _load_team_lookup()
+    last_error = None
+
+    for url in urls:
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+            game_dates = payload.get("leagueSchedule", {}).get("gameDates", []) or []
+
+            games_out = []
+            for game_date_block in game_dates:
+                for game in (game_date_block.get("games", []) or []):
+                    parsed = _build_schedule_game_payload(game, game_date_block, team_lookup)
+                    if parsed:
+                        games_out.append(parsed)
+
+            if not games_out:
+                raise RuntimeError("CDN schedule returned no regular-season games")
+
+            return games_out
+        except Exception as exc:
+            last_error = exc
+            print(f"regular season schedule fetch failed for {url}: {exc}")
+
+    raise last_error or RuntimeError("regular season schedule fetch failed")
+
+
+def _cache_schedule_game_record(game_payload):
+    connection = get_db_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        home_team_id = game_payload.get("home_team", {}).get("id")
+        away_team_id = game_payload.get("away_team", {}).get("id")
+        nba_game_id = str(game_payload.get("game_id") or game_payload.get("nba_game_id") or "").strip()
+        game_date = game_payload.get("game_date") or datetime.date.today().isoformat()
+        start_time = game_payload.get("start_time")
+        status_key = game_payload.get("status_key") or "scheduled"
+
+        if not home_team_id or not away_team_id or not nba_game_id:
+            return None
+
+        cursor.execute(
+            """
+            INSERT INTO games (nba_game_id, home_team_id, away_team_id, game_date, start_time, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                home_team_id = VALUES(home_team_id),
+                away_team_id = VALUES(away_team_id),
+                game_date = VALUES(game_date),
+                start_time = VALUES(start_time),
+                status = VALUES(status)
+            """,
+            (nba_game_id, home_team_id, away_team_id, game_date, start_time, status_key),
+        )
+
+        cursor.execute("SELECT game_id FROM games WHERE nba_game_id = %s LIMIT 1", (nba_game_id,))
+        row = cursor.fetchone()
+        internal_game_id = int(row["game_id"]) if row and row.get("game_id") else None
+
+        home_score = game_payload.get("home_score")
+        away_score = game_payload.get("away_score")
+        if internal_game_id and home_score is not None and away_score is not None:
+            cursor.execute(
+                """
+                INSERT INTO game_cache (game_id, home_score, away_score, period, clock, fetched_at)
+                VALUES (%s, %s, %s, NULL, NULL, NOW())
+                ON DUPLICATE KEY UPDATE
+                    home_score = VALUES(home_score),
+                    away_score = VALUES(away_score),
+                    fetched_at = NOW()
+                """,
+                (internal_game_id, int(home_score), int(away_score)),
+            )
+
+        connection.commit()
+        cursor.close()
+        return internal_game_id
+    except Exception as exc:
+        print(f"Schedule cache error: {exc}")
+        return None
+    finally:
+        connection.close()
+
+
+def _find_schedule_game_by_id(game_identifier):
+    target = str(game_identifier or "").strip()
+    if not target:
+        return None
+
+    for game in _fetch_regular_season_schedule_from_cdn():
+        if str(game.get("game_id")) == target or str(game.get("nba_game_id")) == target:
+            return game
+
+    return None
+
 def _normalize_position(position):
     allowed = {"PG", "SG", "SF", "PF", "C", "G", "F"}
     if not position:
@@ -1098,6 +2092,7 @@ def assets(filename):
 # ================= BASKETBALL API =================
 
 @app.route('/api/admin/sync-teams')
+@admin_required
 def admin_sync():
 
     sync_teams()
@@ -1105,6 +2100,7 @@ def admin_sync():
     return {"message":"teams synced"}
     
 @app.route('/api/admin/sync-standings')
+@admin_required
 def admin_sync_standings():
     try:
         result = sync_standings()
@@ -1114,6 +2110,7 @@ def admin_sync_standings():
         return jsonify({"error": "sync-standings failed", "details": str(e)}), 502
 
 @app.route('/api/admin/sync-players')
+@admin_required
 def admin_sync_players():
     try:
         result = sync_players()
@@ -1548,6 +2545,60 @@ def get_arena_by_nba_team_id(nba_team_id):
     finally:
         connection.close()
 
+@app.route('/api/games/season', methods=['GET'])
+def get_season_games():
+    status_filter = str(request.args.get('status', 'all') or 'all').strip().lower()
+
+    try:
+        games = _fetch_regular_season_schedule_from_cdn()
+
+        if status_filter in ('upcoming', 'scheduled'):
+            games = [g for g in games if g.get('status_key') == 'scheduled']
+            games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '99:99:99')))
+        elif status_filter == 'live':
+            games = [g for g in games if g.get('status_key') == 'live']
+            games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '99:99:99')))
+        elif status_filter in ('completed', 'final'):
+            games = [g for g in games if g.get('status_key') == 'final']
+            games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '00:00:00')), reverse=True)
+        else:
+            upcoming_games = [g for g in games if g.get('status_key') == 'scheduled']
+            live_games = [g for g in games if g.get('status_key') == 'live']
+            final_games = [g for g in games if g.get('status_key') == 'final']
+
+            live_games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '99:99:99')))
+            upcoming_games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '99:99:99')))
+            final_games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '00:00:00')), reverse=True)
+            games = live_games + upcoming_games + final_games
+
+        return jsonify(games), 200
+    except Exception as e:
+        print(f"Error fetching season games: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/teams/<int:team_id>/games', methods=['GET'])
+def get_team_games(team_id):
+    try:
+        team_lookup = _load_team_lookup()
+        team_row = team_lookup['by_internal'].get(str(team_id))
+        if not team_row:
+            return jsonify({'error': 'Team not found'}), 404
+
+        nba_team_id = str(team_row.get('nba_team_id') or '').strip()
+        games = [
+            game for game in _fetch_regular_season_schedule_from_cdn()
+            if str(game.get('home_team', {}).get('nba_team_id') or '') == nba_team_id
+            or str(game.get('away_team', {}).get('nba_team_id') or '') == nba_team_id
+        ]
+
+        games.sort(key=lambda g: ((g.get('game_date') or ''), (g.get('start_time') or '99:99:99')))
+        return jsonify(games), 200
+    except Exception as e:
+        print(f"Error fetching team games: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/games/live', methods=['GET'])
 def get_live_games():
     games = fetch_live_games()
@@ -1609,248 +2660,1067 @@ def get_live_games():
     
     return jsonify(transformed_games)
     
-@app.route('/api/games/<game_id>', methods=['GET'])
-def get_game_detail(game_id):
-    """Get detailed game information including box score"""
-    from nba_api.live.nba.endpoints import boxscore
-    
+def _game_detail_cache_path(game_id):
+    safe_game_id = re.sub(r"[^0-9A-Za-z_-]", "", str(game_id or "").strip())
+    if not safe_game_id:
+        raise ValueError("Invalid game id")
+    return os.path.join(GAME_DETAIL_CACHE_DIR, f"{safe_game_id}.json")
+
+
+def _load_cached_boxscore_payload(game_id):
     try:
-        box = boxscore.BoxScore(game_id=game_id)
-        data = box.get_dict()
-        
-        game = data.get('game', {})
-        
-        # Extract basic game info
-        home_team = game.get('homeTeam', {})
-        away_team = game.get('awayTeam', {})
+        cache_path = _game_detail_cache_path(game_id)
+        if not os.path.exists(cache_path):
+            return None
 
-                # Look up arena using the HOME team's NBA team id
-        arena_name = "Arena TBD"
-        try:
-            home_nba_team_id = str(home_team.get('teamId', ''))
-            connection = get_db_connection()
-            if connection:
-                cursor = connection.cursor(dictionary=True)
-                cursor.execute("""
-                    SELECT arena_name
-                    FROM teams
-                    WHERE nba_team_id = %s
-                """, (home_nba_team_id,))
-                row = cursor.fetchone()
-                if row and row.get("arena_name"):
-                    arena_name = row["arena_name"]
-                cursor.close()
-                connection.close()
-        except Exception as e:
-            print("Arena lookup failed:", e)
-        
-        # Helper function to convert ISO duration to minutes/seconds
-        def parse_seconds(iso_duration):
-            if not iso_duration or iso_duration == 'PT00M00.00S':
-                return 0
-            match = re.match(r'PT(?:(\d+)M)?([\d.]+)S', iso_duration)
-            if match:
-                mins = int(match.group(1) or 0)
-                secs = int(float(match.group(2) or 0))
-                return mins * 60 + secs
-            return 0
+        with open(cache_path, 'r', encoding='utf-8') as cache_file:
+            payload = json.load(cache_file)
+            if payload:
+                GAME_DETAIL_BOX_CACHE[str(game_id)] = payload
+            return payload
+    except Exception as exc:
+        print(f"Game detail cache read failed for {game_id}: {exc}")
+        return None
 
-        def parse_minutes(iso_duration):
-            total_seconds = parse_seconds(iso_duration)
-            mins = total_seconds // 60
-            secs = total_seconds % 60
-            return f'{mins}:{secs:02d}'
-        
-        # Process player stats
-        def process_players(team_data):
-            players = []
-            for player in team_data.get('players', []):
-                stats = player.get('statistics', {}) or {}
-                raw_minutes = stats.get('minutes', 'PT00M00.00S')
-                seconds = parse_seconds(raw_minutes)
 
-                players.append({
-                    'name': player.get('name', ''),
-                    'nameI': player.get('nameI', ''),
-                    'position': player.get('position', ''),
-                    'jerseyNum': player.get('jerseyNum', ''),
-                    'starter': player.get('starter', '') == '1',
-                    'played': player.get('played', '0') == '1',
-                    'minutes': parse_minutes(raw_minutes),
-                    'points': int(stats.get('points') or 0),
-                    'rebounds': int(stats.get('reboundsTotal') or 0),
-                    'assists': int(stats.get('assists') or 0),
-                    'steals': int(stats.get('steals') or 0),
-                    'blocks': int(stats.get('blocks') or 0),
-                    'turnovers': int(stats.get('turnovers') or 0),
-                    'fouls': int(stats.get('foulsPersonal') or 0),
-                    'fgm': int(stats.get('fieldGoalsMade') or 0),
-                    'fga': int(stats.get('fieldGoalsAttempted') or 0),
-                    'fg_pct': float(stats.get('fieldGoalsPercentage') or 0),
-                    'fg3m': int(stats.get('threePointersMade') or 0),
-                    'fg3a': int(stats.get('threePointersAttempted') or 0),
-                    'fg3_pct': float(stats.get('threePointersPercentage') or 0),
-                    'ftm': int(stats.get('freeThrowsMade') or 0),
-                    'fta': int(stats.get('freeThrowsAttempted') or 0),
-                    'ft_pct': float(stats.get('freeThrowsPercentage') or 0),
-                    'plusMinus': int(stats.get('plusMinusPoints') or 0),
-                    'statistics': {
-                        'seconds': seconds,
-                        'minutesCalculated': seconds,
-                        'points': int(stats.get('points') or 0),
-                        'fieldGoalsMade': int(stats.get('fieldGoalsMade') or 0),
-                        'fieldGoalsAttempted': int(stats.get('fieldGoalsAttempted') or 0),
-                        'threePointersMade': int(stats.get('threePointersMade') or 0),
-                        'threePointersAttempted': int(stats.get('threePointersAttempted') or 0),
-                        'freeThrowsMade': int(stats.get('freeThrowsMade') or 0),
-                        'freeThrowsAttempted': int(stats.get('freeThrowsAttempted') or 0),
-                        'reboundsTotal': int(stats.get('reboundsTotal') or 0),
-                        'assists': int(stats.get('assists') or 0),
-                        'steals': int(stats.get('steals') or 0),
-                        'blocks': int(stats.get('blocks') or 0),
-                        'turnovers': int(stats.get('turnovers') or 0),
-                        'foulsPersonal': int(stats.get('foulsPersonal') or 0),
-                        'plusMinusPoints': int(stats.get('plusMinusPoints') or 0),
-                    }
-                })
-            return players
-        
-        # Process team stats
-        def process_team_stats(team_data):
-            stats = team_data.get('statistics', {}) or {}
-            players = team_data.get('players', []) or []
+def _save_cached_boxscore_payload(game_id, payload):
+    if not payload:
+        return False
 
-            # Start with team-level stats if present
-            team_stats = {
+    try:
+        cache_path = _game_detail_cache_path(game_id)
+        with open(cache_path, 'w', encoding='utf-8') as cache_file:
+            json.dump(payload, cache_file, ensure_ascii=False)
+        GAME_DETAIL_BOX_CACHE[str(game_id)] = payload
+        return True
+    except Exception as exc:
+        print(f"Game detail cache write failed for {game_id}: {exc}")
+        return False
+
+
+def _lookup_arena_name_by_nba_team_id(nba_team_id, default='Arena TBD'):
+    team_id = str(nba_team_id or '').strip()
+    if not team_id:
+        return default
+
+    connection = get_db_connection()
+    if not connection:
+        return default
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT arena_name
+            FROM teams
+            WHERE nba_team_id = %s
+            LIMIT 1
+            """,
+            (team_id,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return (row or {}).get('arena_name') or default
+    except Exception as exc:
+        print(f"Arena lookup failed for {team_id}: {exc}")
+        return default
+    finally:
+        connection.close()
+
+
+def _parse_iso_duration_seconds(raw_value):
+    if raw_value in (None, '', 'PT00M00.00S'):
+        return 0
+
+    text_value = str(raw_value).strip()
+    if not text_value:
+        return 0
+
+    mmss_match = re.match(r'^(\d+):(\d{2})$', text_value)
+    if mmss_match:
+        return int(mmss_match.group(1)) * 60 + int(mmss_match.group(2))
+
+    iso_match = re.match(r'PT(?:(\d+)M)?([\d.]+)S', text_value)
+    if iso_match:
+        minutes = int(iso_match.group(1) or 0)
+        seconds = int(float(iso_match.group(2) or 0))
+        return minutes * 60 + seconds
+
+    return 0
+
+
+def _parse_iso_duration_minutes(raw_value):
+    total_seconds = _parse_iso_duration_seconds(raw_value)
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f'{minutes}:{seconds:02d}'
+
+
+def _process_boxscore_players(team_data):
+    players = []
+    for player in (team_data or {}).get('players', []) or []:
+        stats = player.get('statistics', {}) or {}
+        raw_minutes = stats.get('minutes', 'PT00M00.00S')
+        seconds = _parse_iso_duration_seconds(raw_minutes)
+
+        players.append({
+            'name': player.get('name', ''),
+            'nameI': player.get('nameI', ''),
+            'position': player.get('position', ''),
+            'jerseyNum': player.get('jerseyNum', ''),
+            'starter': player.get('starter', '') == '1',
+            'played': player.get('played', '0') == '1',
+            'minutes': _parse_iso_duration_minutes(raw_minutes),
+            'points': int(stats.get('points') or 0),
+            'rebounds': int(stats.get('reboundsTotal') or 0),
+            'assists': int(stats.get('assists') or 0),
+            'steals': int(stats.get('steals') or 0),
+            'blocks': int(stats.get('blocks') or 0),
+            'turnovers': int(stats.get('turnovers') or 0),
+            'fouls': int(stats.get('foulsPersonal') or 0),
+            'fgm': int(stats.get('fieldGoalsMade') or 0),
+            'fga': int(stats.get('fieldGoalsAttempted') or 0),
+            'fg_pct': float(stats.get('fieldGoalsPercentage') or 0),
+            'fg3m': int(stats.get('threePointersMade') or 0),
+            'fg3a': int(stats.get('threePointersAttempted') or 0),
+            'fg3_pct': float(stats.get('threePointersPercentage') or 0),
+            'ftm': int(stats.get('freeThrowsMade') or 0),
+            'fta': int(stats.get('freeThrowsAttempted') or 0),
+            'ft_pct': float(stats.get('freeThrowsPercentage') or 0),
+            'plusMinus': int(stats.get('plusMinusPoints') or 0),
+            'statistics': {
+                'seconds': seconds,
+                'minutesCalculated': seconds,
                 'points': int(stats.get('points') or 0),
-                'fgm': int(stats.get('fieldGoalsMade') or 0),
-                'fga': int(stats.get('fieldGoalsAttempted') or 0),
-                'fg_pct': float(stats.get('fieldGoalsPercentage') or 0),
-                'fg3m': int(stats.get('threePointersMade') or 0),
-                'fg3a': int(stats.get('threePointersAttempted') or 0),
-                'fg3_pct': float(stats.get('threePointersPercentage') or 0),
-                'ftm': int(stats.get('freeThrowsMade') or 0),
-                'fta': int(stats.get('freeThrowsAttempted') or 0),
-                'ft_pct': float(stats.get('freeThrowsPercentage') or 0),
-                'rebounds': int(stats.get('reboundsTotal') or 0),
-                'offReb': int(stats.get('reboundsOffensive') or 0),
-                'defReb': int(stats.get('reboundsDefensive') or 0),
+                'fieldGoalsMade': int(stats.get('fieldGoalsMade') or 0),
+                'fieldGoalsAttempted': int(stats.get('fieldGoalsAttempted') or 0),
+                'threePointersMade': int(stats.get('threePointersMade') or 0),
+                'threePointersAttempted': int(stats.get('threePointersAttempted') or 0),
+                'freeThrowsMade': int(stats.get('freeThrowsMade') or 0),
+                'freeThrowsAttempted': int(stats.get('freeThrowsAttempted') or 0),
+                'reboundsTotal': int(stats.get('reboundsTotal') or 0),
                 'assists': int(stats.get('assists') or 0),
                 'steals': int(stats.get('steals') or 0),
                 'blocks': int(stats.get('blocks') or 0),
-                'turnovers': int(stats.get('turnoversTotal') or stats.get('turnovers') or 0),
-                'fouls': int(stats.get('foulsPersonal') or 0),
-                'pointsInPaint': int(stats.get('pointsInThePaint') or 0),
-                'fastBreakPoints': int(stats.get('pointsFastBreak') or 0),
-                'benchPoints': int(stats.get('benchPoints') or 0),
-                'biggestLead': int(stats.get('biggestLead') or 0)
+                'turnovers': int(stats.get('turnovers') or 0),
+                'foulsPersonal': int(stats.get('foulsPersonal') or 0),
+                'plusMinusPoints': int(stats.get('plusMinusPoints') or 0),
             }
+        })
+    return players
 
-            # If core stats are zero/incomplete, rebuild them from player stats
-            rebuild_needed = (
-                int(team_data.get('score') or 0) > 0 and (
-                    team_stats['fgm'] == 0 or
-                    team_stats['fga'] == 0 or
-                    team_stats['rebounds'] == 0
-                )
-            )
 
-            if rebuild_needed:
-                rebuilt = {
-                    'points': 0,
-                    'fgm': 0,
-                    'fga': 0,
-                    'fg3m': 0,
-                    'fg3a': 0,
-                    'ftm': 0,
-                    'fta': 0,
-                    'rebounds': 0,
-                    'assists': 0,
-                    'steals': 0,
-                    'blocks': 0,
-                    'turnovers': 0,
-                    'fouls': 0,
-                }
+def _process_boxscore_team_stats(team_data):
+    team_data = team_data or {}
+    stats = team_data.get('statistics', {}) or {}
+    players = team_data.get('players', []) or []
 
-                for player in players:
-                    if player.get('played') != '1':
-                        continue
+    team_stats = {
+        'points': int(stats.get('points') or 0),
+        'fgm': int(stats.get('fieldGoalsMade') or 0),
+        'fga': int(stats.get('fieldGoalsAttempted') or 0),
+        'fg_pct': float(stats.get('fieldGoalsPercentage') or 0),
+        'fg3m': int(stats.get('threePointersMade') or 0),
+        'fg3a': int(stats.get('threePointersAttempted') or 0),
+        'fg3_pct': float(stats.get('threePointersPercentage') or 0),
+        'ftm': int(stats.get('freeThrowsMade') or 0),
+        'fta': int(stats.get('freeThrowsAttempted') or 0),
+        'ft_pct': float(stats.get('freeThrowsPercentage') or 0),
+        'rebounds': int(stats.get('reboundsTotal') or 0),
+        'offReb': int(stats.get('reboundsOffensive') or 0),
+        'defReb': int(stats.get('reboundsDefensive') or 0),
+        'assists': int(stats.get('assists') or 0),
+        'steals': int(stats.get('steals') or 0),
+        'blocks': int(stats.get('blocks') or 0),
+        'turnovers': int(stats.get('turnoversTotal') or stats.get('turnovers') or 0),
+        'fouls': int(stats.get('foulsPersonal') or 0),
+        'pointsInPaint': int(stats.get('pointsInThePaint') or 0),
+        'fastBreakPoints': int(stats.get('pointsFastBreak') or 0),
+        'benchPoints': int(stats.get('benchPoints') or 0),
+        'biggestLead': int(stats.get('biggestLead') or 0),
+    }
 
-                    pstats = player.get('statistics', {}) or {}
+    rebuild_needed = (
+        int(team_data.get('score') or 0) > 0 and (
+            team_stats['fgm'] == 0 or
+            team_stats['fga'] == 0 or
+            team_stats['rebounds'] == 0
+        )
+    )
 
-                    rebuilt['points'] += int(pstats.get('points') or 0)
-                    rebuilt['fgm'] += int(pstats.get('fieldGoalsMade') or 0)
-                    rebuilt['fga'] += int(pstats.get('fieldGoalsAttempted') or 0)
-                    rebuilt['fg3m'] += int(pstats.get('threePointersMade') or 0)
-                    rebuilt['fg3a'] += int(pstats.get('threePointersAttempted') or 0)
-                    rebuilt['ftm'] += int(pstats.get('freeThrowsMade') or 0)
-                    rebuilt['fta'] += int(pstats.get('freeThrowsAttempted') or 0)
-                    rebuilt['rebounds'] += int(pstats.get('reboundsTotal') or 0)
-                    rebuilt['assists'] += int(pstats.get('assists') or 0)
-                    rebuilt['steals'] += int(pstats.get('steals') or 0)
-                    rebuilt['blocks'] += int(pstats.get('blocks') or 0)
-                    rebuilt['turnovers'] += int(pstats.get('turnovers') or 0)
-                    rebuilt['fouls'] += int(pstats.get('foulsPersonal') or 0)
-
-                team_stats['points'] = rebuilt['points']
-                team_stats['fgm'] = rebuilt['fgm']
-                team_stats['fga'] = rebuilt['fga']
-                team_stats['fg3m'] = rebuilt['fg3m']
-                team_stats['fg3a'] = rebuilt['fg3a']
-                team_stats['ftm'] = rebuilt['ftm']
-                team_stats['fta'] = rebuilt['fta']
-                team_stats['rebounds'] = rebuilt['rebounds']
-                team_stats['assists'] = rebuilt['assists']
-                team_stats['steals'] = rebuilt['steals']
-                team_stats['blocks'] = rebuilt['blocks']
-                team_stats['turnovers'] = rebuilt['turnovers']
-                team_stats['fouls'] = rebuilt['fouls']
-
-                team_stats['fg_pct'] = round((rebuilt['fgm'] / rebuilt['fga']) * 100, 1) if rebuilt['fga'] > 0 else 0
-                team_stats['fg3_pct'] = round((rebuilt['fg3m'] / rebuilt['fg3a']) * 100, 1) if rebuilt['fg3a'] > 0 else 0
-                team_stats['ft_pct'] = round((rebuilt['ftm'] / rebuilt['fta']) * 100, 1) if rebuilt['fta'] > 0 else 0
-
-            team_stats['reb'] = team_stats['rebounds']
-            team_stats['ast'] = team_stats['assists']
-            team_stats['stl'] = team_stats['steals']
-            team_stats['blk'] = team_stats['blocks']
-
-            return team_stats
-
-        result = {
-            'gameId': game.get('gameId', ''),
-            'gameStatus': game.get('gameStatus', 1),
-            'gameStatusText': game.get('gameStatusText', ''),
-            'period': game.get('period', 0),
-            'gameClock': game.get('gameClock', ''),
-            'arena_name': arena_name,
-            'homeTeam': {
-                'teamId': home_team.get('teamId', 0),
-                'teamName': home_team.get('teamName', ''),
-                'teamCity': home_team.get('teamCity', ''),
-                'teamTricode': home_team.get('teamTricode', ''),
-                'score': home_team.get('score', 0),
-                'periods': home_team.get('periods', []),
-                'players': process_players(home_team),
-                'statistics': process_team_stats(home_team)
-            },
-            'awayTeam': {
-                'teamId': away_team.get('teamId', 0),
-                'teamName': away_team.get('teamName', ''),
-                'teamCity': away_team.get('teamCity', ''),
-                'teamTricode': away_team.get('teamTricode', ''),
-                'score': away_team.get('score', 0),
-                'periods': away_team.get('periods', []),
-                'players': process_players(away_team),
-                'statistics': process_team_stats(away_team)
-            }
+    if rebuild_needed:
+        rebuilt = {
+            'points': 0,
+            'fgm': 0,
+            'fga': 0,
+            'fg3m': 0,
+            'fg3a': 0,
+            'ftm': 0,
+            'fta': 0,
+            'rebounds': 0,
+            'assists': 0,
+            'steals': 0,
+            'blocks': 0,
+            'turnovers': 0,
+            'fouls': 0,
         }
 
-        return jsonify(result)
+        for player in players:
+            if player.get('played') != '1':
+                continue
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
+            pstats = player.get('statistics', {}) or {}
+            rebuilt['points'] += int(pstats.get('points') or 0)
+            rebuilt['fgm'] += int(pstats.get('fieldGoalsMade') or 0)
+            rebuilt['fga'] += int(pstats.get('fieldGoalsAttempted') or 0)
+            rebuilt['fg3m'] += int(pstats.get('threePointersMade') or 0)
+            rebuilt['fg3a'] += int(pstats.get('threePointersAttempted') or 0)
+            rebuilt['ftm'] += int(pstats.get('freeThrowsMade') or 0)
+            rebuilt['fta'] += int(pstats.get('freeThrowsAttempted') or 0)
+            rebuilt['rebounds'] += int(pstats.get('reboundsTotal') or 0)
+            rebuilt['assists'] += int(pstats.get('assists') or 0)
+            rebuilt['steals'] += int(pstats.get('steals') or 0)
+            rebuilt['blocks'] += int(pstats.get('blocks') or 0)
+            rebuilt['turnovers'] += int(pstats.get('turnovers') or 0)
+            rebuilt['fouls'] += int(pstats.get('foulsPersonal') or 0)
+
+        team_stats['points'] = rebuilt['points']
+        team_stats['fgm'] = rebuilt['fgm']
+        team_stats['fga'] = rebuilt['fga']
+        team_stats['fg3m'] = rebuilt['fg3m']
+        team_stats['fg3a'] = rebuilt['fg3a']
+        team_stats['ftm'] = rebuilt['ftm']
+        team_stats['fta'] = rebuilt['fta']
+        team_stats['rebounds'] = rebuilt['rebounds']
+        team_stats['assists'] = rebuilt['assists']
+        team_stats['steals'] = rebuilt['steals']
+        team_stats['blocks'] = rebuilt['blocks']
+        team_stats['turnovers'] = rebuilt['turnovers']
+        team_stats['fouls'] = rebuilt['fouls']
+
+        team_stats['fg_pct'] = round((rebuilt['fgm'] / rebuilt['fga']) * 100, 1) if rebuilt['fga'] > 0 else 0
+        team_stats['fg3_pct'] = round((rebuilt['fg3m'] / rebuilt['fg3a']) * 100, 1) if rebuilt['fg3a'] > 0 else 0
+        team_stats['ft_pct'] = round((rebuilt['ftm'] / rebuilt['fta']) * 100, 1) if rebuilt['fta'] > 0 else 0
+
+    team_stats['reb'] = team_stats['rebounds']
+    team_stats['ast'] = team_stats['assists']
+    team_stats['stl'] = team_stats['steals']
+    team_stats['blk'] = team_stats['blocks']
+
+    return team_stats
+
+
+def _schedule_status_to_game_status(schedule_game):
+    status_key = (schedule_game or {}).get('status_key')
+    if status_key == 'final':
+        return 3
+    if status_key == 'live':
+        return 2
+    return 1
+
+
+def _get_boxscore_payload_with_cache(game_id, schedule_game=None):
+    game_id = str(game_id or '').strip()
+    if not game_id:
+        raise ValueError('Missing game id')
+
+    cached_payload = _load_cached_boxscore_payload(game_id)
+    if cached_payload and (schedule_game or {}).get('status_key') == 'final':
+        return cached_payload
+
+    try:
+        payload = _fetch_boxscore_payload(game_id, GAME_DETAIL_BOX_CACHE)
+        if payload and payload.get('game'):
+            _save_cached_boxscore_payload(game_id, payload)
+        return payload
+    except Exception as exc:
+        print(f"Live boxscore fetch failed for {game_id}: {exc}")
+        if cached_payload:
+            return cached_payload
+        raise
+
+
+def _transform_boxscore_payload(payload, schedule_game=None):
+    game = (payload or {}).get('game', {}) or {}
+    if not game:
+        raise RuntimeError('Game detail payload was empty')
+
+    home_team = game.get('homeTeam', {}) or {}
+    away_team = game.get('awayTeam', {}) or {}
+
+    arena_name = (
+        game.get('arenaName')
+        or (schedule_game or {}).get('arena_name')
+        or _lookup_arena_name_by_nba_team_id(home_team.get('teamId'))
+        or 'Arena TBD'
+    )
+
+    game_status = _safe_int(game.get('gameStatus'))
+    if game_status is None:
+        game_status = _schedule_status_to_game_status(schedule_game)
+
+    game_status_text = str(
+        game.get('gameStatusText')
+        or (schedule_game or {}).get('game_time')
+        or (schedule_game or {}).get('status')
+        or ''
+    ).strip()
+
+    if not game_status_text:
+        game_status_text = 'Final' if game_status == 3 else ('Live' if game_status == 2 else 'Upcoming')
+
+    return {
+        'gameId': game.get('gameId') or (schedule_game or {}).get('game_id') or '',
+        'gameStatus': game_status,
+        'gameStatusText': game_status_text,
+        'period': _safe_int(game.get('period')) or 0,
+        'gameClock': game.get('gameClock', ''),
+        'arena_name': arena_name,
+        'homeTeam': {
+            'teamId': home_team.get('teamId', 0),
+            'teamName': home_team.get('teamName', ''),
+            'teamCity': home_team.get('teamCity', ''),
+            'teamTricode': home_team.get('teamTricode', ''),
+            'score': home_team.get('score', 0),
+            'periods': home_team.get('periods', []),
+            'players': _process_boxscore_players(home_team),
+            'statistics': _process_boxscore_team_stats(home_team),
+        },
+        'awayTeam': {
+            'teamId': away_team.get('teamId', 0),
+            'teamName': away_team.get('teamName', ''),
+            'teamCity': away_team.get('teamCity', ''),
+            'teamTricode': away_team.get('teamTricode', ''),
+            'score': away_team.get('score', 0),
+            'periods': away_team.get('periods', []),
+            'players': _process_boxscore_players(away_team),
+            'statistics': _process_boxscore_team_stats(away_team),
+        }
+    }
+
+
+def _sync_completed_game_details(limit=None, offset=0, force=False):
+    schedule_games = _fetch_regular_season_schedule_from_cdn()
+    completed_games = [game for game in schedule_games if game.get('status_key') == 'final']
+    completed_games.sort(key=lambda game: ((game.get('game_date') or ''), (game.get('start_time') or '00:00:00')))
+
+    total_available = len(completed_games)
+    if offset and offset > 0:
+        completed_games = completed_games[offset:]
+
+    if limit and limit > 0:
+        completed_games = completed_games[:limit]
+
+    synced = 0
+    skipped = 0
+    schedule_cached = 0
+    errors = []
+    request_cache = {}
+
+    for schedule_game in completed_games:
+        game_id = str(schedule_game.get('game_id') or '').strip()
+        if not game_id:
+            continue
+
+        try:
+            cache_path = _game_detail_cache_path(game_id)
+        except Exception:
+            continue
+
+        try:
+            internal_id = _cache_schedule_game_record(schedule_game)
+            if internal_id:
+                schedule_cached += 1
+
+            if not force and os.path.exists(cache_path):
+                skipped += 1
+                continue
+
+            payload = _fetch_boxscore_payload(game_id, request_cache)
+            if not payload or not payload.get('game'):
+                raise RuntimeError('Boxscore payload was empty')
+
+            _save_cached_boxscore_payload(game_id, payload)
+            synced += 1
+        except Exception as exc:
+            errors.append({'game_id': game_id, 'error': str(exc)})
+
+    return {
+        'total_available_completed_games': total_available,
+        'offset': offset,
+        'requested_count': len(completed_games),
+        'synced_game_details': synced,
+        'skipped_existing_cache': skipped,
+        'schedule_records_cached': schedule_cached,
+        'errors': errors,
+        'cache_directory': GAME_DETAIL_CACHE_DIR,
+    }
+
+
+@app.route('/api/admin/sync-completed-game-details', methods=['GET', 'POST'])
+@admin_required
+def sync_completed_game_details():
+    try:
+        args = request.get_json(silent=True) or {}
+        limit_raw = request.args.get('limit', args.get('limit'))
+        offset_raw = request.args.get('offset', args.get('offset'))
+        force_raw = request.args.get('force', args.get('force', False))
+
+        limit = _safe_int(limit_raw)
+        offset = _safe_int(offset_raw) or 0
+        force = str(force_raw).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+        result = _sync_completed_game_details(limit=limit, offset=offset, force=force)
+        return jsonify(result), 200
+    except Exception as exc:
+        print(f"Completed game detail sync error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/games/<game_id>', methods=['GET'])
+def get_game_detail(game_id):
+    """Get detailed game information for live and completed games."""
+    schedule_game = None
+
+    try:
+        try:
+            schedule_game = _find_schedule_game_by_id(game_id)
+            if schedule_game:
+                _cache_schedule_game_record(schedule_game)
+        except Exception as lookup_exc:
+            print(f"Schedule lookup failed for game detail {game_id}: {lookup_exc}")
+
+        payload = _get_boxscore_payload_with_cache(game_id, schedule_game=schedule_game)
+        result = _transform_boxscore_payload(payload, schedule_game=schedule_game)
+        return jsonify(_make_json_safe(result)), 200
+    except requests.HTTPError as exc:
+        status_code = getattr(exc.response, 'status_code', 500) or 500
+        if (schedule_game or {}).get('status_key') == 'scheduled':
+            return jsonify({'error': 'Game detail is not available yet for this upcoming game.'}), 404
+        return jsonify({'error': f'Could not load game detail: {exc}'}), status_code
+    except Exception as exc:
+        print(f"Game detail error for {game_id}: {exc}")
+        if (schedule_game or {}).get('status_key') == 'scheduled':
+            return jsonify({'error': 'Game detail is not available yet for this upcoming game.'}), 404
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/admin/dashboard', methods=['GET'])
+@admin_required
+def get_admin_dashboard():
+    ensure_admin_homepage_schema()
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        today = datetime.date.today().isoformat()
+
+        cursor.execute("SELECT COUNT(*) AS total_users FROM users")
+        total_users = int((cursor.fetchone() or {}).get('total_users') or 0)
+
+        tracked_today = 0
+        if _table_exists(cursor, 'games') and _column_exists(cursor, 'games', 'game_date'):
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS tracked_today
+                FROM games
+                WHERE game_date = %s
+                """,
+                (today,),
+            )
+            tracked_today = int((cursor.fetchone() or {}).get('tracked_today') or 0)
+
+        last_sync_candidates = []
+        sync_queries = []
+        if _table_exists(cursor, 'team_standings') and _column_exists(cursor, 'team_standings', 'last_updated'):
+            sync_queries.append("SELECT MAX(last_updated) AS last_sync FROM team_standings")
+        if _table_exists(cursor, 'game_cache') and _column_exists(cursor, 'game_cache', 'fetched_at'):
+            sync_queries.append("SELECT MAX(fetched_at) AS last_sync FROM game_cache")
+
+        for query in sync_queries:
+            cursor.execute(query)
+            value = (cursor.fetchone() or {}).get('last_sync')
+            if value:
+                last_sync_candidates.append(value)
+
+        last_sync = max(last_sync_candidates).isoformat() if last_sync_candidates else None
+
+        teams_to_watch_count = 0
+        if _table_exists(cursor, 'teams_to_watch') and _column_exists(cursor, 'teams_to_watch', 'watch_date'):
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS teams_to_watch_count
+                FROM teams_to_watch
+                WHERE watch_date = %s
+                """,
+                (today,),
+            )
+            teams_to_watch_count = int((cursor.fetchone() or {}).get('teams_to_watch_count') or 0)
+
+        cursor.close()
+        return jsonify({
+            'today': today,
+            'stats': {
+                'total_users': total_users,
+                'tracked_today': tracked_today,
+                'last_sync': last_sync,
+                'open_reports': 0,
+                'teams_to_watch_count': teams_to_watch_count,
+            },
+        }), 200
+    except Exception as exc:
+        print(f"Admin dashboard error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/comments', methods=['GET'])
+@admin_required
+def get_admin_comments():
+    ensure_admin_homepage_schema()
+    limit = max(1, min(int(request.args.get('limit', 20) or 20), 100))
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        rows = []
+
+        if _table_exists(cursor, 'game_comments') and _table_exists(cursor, 'users'):
+            game_comment_columns = _fetch_table_columns(cursor, 'game_comments')
+            game_created_select = 'gc.created_at' if 'created_at' in game_comment_columns else 'NULL AS created_at'
+            cursor.execute(
+                f"""
+                SELECT
+                    'game' AS source_type,
+                    gc.comment_id,
+                    gc.comment_text,
+                    {game_created_select},
+                    gc.game_id AS reference_id,
+                    g.nba_game_id AS external_reference,
+                    COALESCE(u.display_name, u.username, u.email, CONCAT('User ', u.user_id)) AS user_name
+                FROM game_comments gc
+                JOIN users u ON gc.user_id = u.user_id
+                LEFT JOIN games g ON gc.game_id = g.game_id
+                ORDER BY gc.comment_id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows.extend(cursor.fetchall() or [])
+
+        if _table_exists(cursor, 'qotd_comments') and _table_exists(cursor, 'users'):
+            qotd_comment_columns = _fetch_table_columns(cursor, 'qotd_comments')
+            qotd_created_select = 'qc.created_at' if 'created_at' in qotd_comment_columns else 'NULL AS created_at'
+            cursor.execute(
+                f"""
+                SELECT
+                    'qotd' AS source_type,
+                    qc.comment_id,
+                    qc.comment_text,
+                    {qotd_created_select},
+                    qc.question_id AS reference_id,
+                    CAST(q.question_date AS CHAR) AS external_reference,
+                    COALESCE(u.display_name, u.username, u.email, CONCAT('User ', u.user_id)) AS user_name
+                FROM qotd_comments qc
+                JOIN users u ON qc.user_id = u.user_id
+                LEFT JOIN qotd_questions q ON qc.question_id = q.question_id
+                ORDER BY qc.comment_id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows.extend(cursor.fetchall() or [])
+
+        rows.sort(key=lambda row: ((row.get('created_at') is None), row.get('created_at') or datetime.datetime.min, row.get('comment_id') or 0), reverse=True)
+        rows = rows[:limit]
+
+        cursor.close()
+        return jsonify({'comments': _make_json_safe(rows)}), 200
+    except Exception as exc:
+        print(f"Admin comments error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/comments/<source_type>/<int:comment_id>', methods=['DELETE'])
+@admin_required
+def delete_admin_comment(source_type, comment_id):
+    source_type = str(source_type or '').strip().lower()
+    table_name = 'game_comments' if source_type == 'game' else 'qotd_comments' if source_type == 'qotd' else ''
+    if not table_name:
+        return jsonify({'error': 'Unknown comment source.'}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(f"DELETE FROM {table_name} WHERE comment_id = %s", (comment_id,))
+        connection.commit()
+        deleted = cursor.rowcount
+        cursor.close()
+        if not deleted:
+            return jsonify({'error': 'Comment not found.'}), 404
+        return jsonify({'success': True, 'deleted_comment_id': comment_id, 'source_type': source_type}), 200
+    except Exception as exc:
+        print(f"Admin comment delete error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/qotd/<date>', methods=['GET'])
+@admin_required
+def get_admin_qotd(date):
+    ensure_admin_homepage_schema()
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        qotd_columns = _fetch_table_columns(cursor, 'qotd_questions')
+        qotd_select = _optional_select(
+            qotd_columns,
+            ['question_id', 'question_date', 'question_text'],
+            ['is_open', 'created_at'],
+            fallback='NULL',
+        )
+        cursor.execute(
+            f"""
+            SELECT {qotd_select}
+            FROM qotd_questions
+            WHERE question_date = %s
+            LIMIT 1
+            """,
+            (date,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify(_make_json_safe(row) if row else {'question_date': date, 'question_text': '', 'is_open': True}), 200
+    except Exception as exc:
+        print(f"Admin QOTD fetch error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/qotd/<date>', methods=['PUT'])
+@admin_required
+def save_admin_qotd(date):
+    ensure_admin_homepage_schema()
+    admin_user = _get_authorized_user()
+    if not admin_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    question_text = str(data.get('question_text') or '').strip()
+    is_open = bool(data.get('is_open', True))
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT question_id FROM qotd_questions WHERE question_date = %s LIMIT 1",
+            (date,),
+        )
+        existing = cursor.fetchone()
+
+        if question_text:
+            if existing:
+                cursor.execute(
+                    """
+                    UPDATE qotd_questions
+                    SET question_text = %s,
+                        is_open = %s,
+                        admin_user_id = %s
+                    WHERE question_id = %s
+                    """,
+                    (question_text, is_open, admin_user.get('user_id'), existing.get('question_id')),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO qotd_questions (admin_user_id, question_date, question_text, is_open)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (admin_user.get('user_id'), date, question_text, is_open),
+                )
+        elif existing:
+            cursor.execute("DELETE FROM qotd_questions WHERE question_id = %s", (existing.get('question_id'),))
+
+        connection.commit()
+
+        qotd_columns = _fetch_table_columns(cursor, 'qotd_questions')
+        qotd_select = _optional_select(
+            qotd_columns,
+            ['question_id', 'question_date', 'question_text'],
+            ['is_open', 'created_at'],
+            fallback='NULL',
+        )
+        cursor.execute(
+            f"""
+            SELECT {qotd_select}
+            FROM qotd_questions
+            WHERE question_date = %s
+            LIMIT 1
+            """,
+            (date,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify(_make_json_safe(row) if row else {'question_date': date, 'question_text': '', 'is_open': is_open}), 200
+    except Exception as exc:
+        print(f"Admin QOTD save error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/daily-content/<date>', methods=['GET'])
+@admin_required
+def get_admin_daily_content(date):
+    ensure_admin_homepage_schema()
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        daily_columns = _fetch_table_columns(cursor, 'daily_content')
+        daily_created_select = 'dc.created_at' if 'created_at' in daily_columns else 'NULL AS created_at'
+        cursor.execute(
+            f"""
+            SELECT dc.content_date, dc.fact_text, dc.featured_game_id, g.nba_game_id AS featured_nba_game_id, {daily_created_select}
+            FROM daily_content dc
+            LEFT JOIN games g ON dc.featured_game_id = g.game_id
+            WHERE dc.content_date = %s
+            LIMIT 1
+            """,
+            (date,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify(_make_json_safe(row) if row else {'content_date': date, 'fact_text': '', 'featured_game_id': None}), 200
+    except Exception as exc:
+        print(f"Admin daily content fetch error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/daily-content/<date>', methods=['PUT'])
+@admin_required
+def save_admin_daily_content(date):
+    ensure_admin_homepage_schema()
+    admin_user = _get_authorized_user()
+    if not admin_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    fact_text = str(data.get('fact_text') or '').strip()
+    featured_game_identifier = str(data.get('featured_game_id') or '').strip()
+    featured_game_id = None
+    if featured_game_identifier and featured_game_identifier.lower() != 'null':
+        featured_game_id = resolve_internal_game_id(featured_game_identifier)
+        if featured_game_id is None:
+            return jsonify({'error': 'featured_game_id must match a cached HoopWatch game.'}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT content_date FROM daily_content WHERE content_date = %s LIMIT 1", (date,))
+        existing = cursor.fetchone()
+
+        if fact_text or featured_game_id is not None:
+            if existing:
+                cursor.execute(
+                    """
+                    UPDATE daily_content
+                    SET fact_text = %s,
+                        featured_game_id = %s,
+                        admin_user_id = %s
+                    WHERE content_date = %s
+                    """,
+                    (fact_text or 'No fact set yet.', featured_game_id, admin_user.get('user_id'), date),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO daily_content (content_date, fact_text, featured_game_id, admin_user_id)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (date, fact_text or 'No fact set yet.', featured_game_id, admin_user.get('user_id')),
+                )
+        elif existing:
+            cursor.execute("DELETE FROM daily_content WHERE content_date = %s", (date,))
+
+        connection.commit()
+
+        daily_columns = _fetch_table_columns(cursor, 'daily_content')
+        daily_created_select = 'dc.created_at' if 'created_at' in daily_columns else 'NULL AS created_at'
+        cursor.execute(
+            f"""
+            SELECT dc.content_date, dc.fact_text, dc.featured_game_id, g.nba_game_id AS featured_nba_game_id, {daily_created_select}
+            FROM daily_content dc
+            LEFT JOIN games g ON dc.featured_game_id = g.game_id
+            WHERE dc.content_date = %s
+            LIMIT 1
+            """,
+            (date,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return jsonify(_make_json_safe(row) if row else {'content_date': date, 'fact_text': '', 'featured_game_id': None}), 200
+    except Exception as exc:
+        print(f"Admin daily content save error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/teams-to-watch/<date>', methods=['GET'])
+@admin_required
+def get_admin_teams_to_watch(date):
+    ensure_admin_homepage_schema()
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT tw.team_id, t.name, t.abbreviation
+            FROM teams_to_watch tw
+            JOIN teams t ON tw.team_id = t.team_id
+            WHERE tw.watch_date = %s
+            ORDER BY t.name ASC
+            """,
+            (date,),
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+        return jsonify({'watch_date': date, 'teams': _make_json_safe(rows)}), 200
+    except Exception as exc:
+        print(f"Admin teams-to-watch fetch error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/admin/teams-to-watch/<date>', methods=['PUT'])
+@admin_required
+def save_admin_teams_to_watch(date):
+    ensure_admin_homepage_schema()
+    admin_user = _get_authorized_user()
+    if not admin_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    raw_team_ids = data.get('team_ids') or []
+    if not isinstance(raw_team_ids, list):
+        return jsonify({'error': 'team_ids must be an array.'}), 400
+
+    team_ids = []
+    for value in raw_team_ids:
+        try:
+            team_ids.append(int(value))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'All team_ids must be valid integers.'}), 400
+
+    unique_team_ids = sorted(set(team_ids))
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("DELETE FROM teams_to_watch WHERE watch_date = %s", (date,))
+
+        if unique_team_ids:
+            insert_cursor = connection.cursor()
+            insert_cursor.executemany(
+                """
+                INSERT INTO teams_to_watch (watch_date, team_id, admin_user_id)
+                VALUES (%s, %s, %s)
+                """,
+                [(date, team_id, admin_user.get('user_id')) for team_id in unique_team_ids],
+            )
+            insert_cursor.close()
+
+        connection.commit()
+
+        cursor.execute(
+            """
+            SELECT tw.team_id, t.name, t.abbreviation
+            FROM teams_to_watch tw
+            JOIN teams t ON tw.team_id = t.team_id
+            WHERE tw.watch_date = %s
+            ORDER BY t.name ASC
+            """,
+            (date,),
+        )
+        rows = cursor.fetchall() or []
+        cursor.close()
+        return jsonify({'watch_date': date, 'teams': _make_json_safe(rows)}), 200
+    except Exception as exc:
+        print(f"Admin teams-to-watch save error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/home-content/<date>', methods=['GET'])
+def get_home_content(date):
+    ensure_admin_homepage_schema()
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        qotd = None
+        try:
+            qotd_columns = _fetch_table_columns(cursor, 'qotd_questions')
+            qotd_where = 'WHERE question_date = %s'
+            if 'is_open' in qotd_columns:
+                qotd_where += ' AND is_open = TRUE'
+            cursor.execute(
+                f"""
+                SELECT question_id, question_text, question_date
+                FROM qotd_questions
+                {qotd_where}
+                LIMIT 1
+                """,
+                (date,),
+            )
+            qotd = cursor.fetchone()
+        except Exception as exc:
+            print(f"Home content QOTD fetch warning: {exc}")
+            qotd = None
+
+        daily_content = {}
+        try:
+            cursor.execute(
+                """
+                SELECT dc.content_date, dc.fact_text, dc.featured_game_id, g.nba_game_id AS featured_nba_game_id
+                FROM daily_content dc
+                LEFT JOIN games g ON dc.featured_game_id = g.game_id
+                WHERE dc.content_date = %s
+                LIMIT 1
+                """,
+                (date,),
+            )
+            daily_content = cursor.fetchone() or {}
+        except Exception as exc:
+            print(f"Home content daily content fetch warning: {exc}")
+            daily_content = {}
+
+        teams_to_watch = []
+        try:
+            if _table_exists(cursor, 'team_standings'):
+                cursor.execute(
+                    """
+                    SELECT
+                        t.team_id,
+                        t.name,
+                        t.city,
+                        t.abbreviation,
+                        t.logo_url,
+                        COALESCE(ts.wins, 0) AS wins,
+                        COALESCE(ts.losses, 0) AS losses
+                    FROM teams_to_watch tw
+                    JOIN teams t ON tw.team_id = t.team_id
+                    LEFT JOIN team_standings ts ON ts.team_id = t.team_id
+                    WHERE tw.watch_date = %s
+                    ORDER BY t.name ASC
+                    """,
+                    (date,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        t.team_id,
+                        t.name,
+                        t.city,
+                        t.abbreviation,
+                        t.logo_url,
+                        0 AS wins,
+                        0 AS losses
+                    FROM teams_to_watch tw
+                    JOIN teams t ON tw.team_id = t.team_id
+                    WHERE tw.watch_date = %s
+                    ORDER BY t.name ASC
+                    """,
+                    (date,),
+                )
+            teams_to_watch = cursor.fetchall() or []
+        except Exception as exc:
+            print(f"Home content teams-to-watch fetch warning: {exc}")
+            teams_to_watch = []
+
+        cursor.close()
+
+        todays_games = _games_for_date(date)
+        preferred_game_ids = [
+            daily_content.get('featured_game_id'),
+            daily_content.get('featured_nba_game_id'),
+        ]
+        featured_game = _choose_featured_game(date, todays_games, preferred_game_ids)
+
+        other_games = []
+        featured_ids = set()
+        if featured_game:
+            featured_ids = {
+                str(featured_game.get('game_id') or '').strip(),
+                str(featured_game.get('gameId') or '').strip(),
+                str(featured_game.get('nba_game_id') or '').strip(),
+            }
+
+        for game in todays_games:
+            game_ids = {
+                str(game.get('game_id') or '').strip(),
+                str(game.get('gameId') or '').strip(),
+                str(game.get('nba_game_id') or '').strip(),
+            }
+            if featured_ids and featured_ids.intersection(game_ids):
+                continue
+            other_games.append(game)
+
+        return jsonify({
+            'date': date,
+            'qotd': _make_json_safe(qotd),
+            'fact_text': (daily_content.get('fact_text') or '').strip(),
+            'featured_game': _make_json_safe(featured_game),
+            'featured_game_source': 'admin' if daily_content.get('featured_game_id') else ('auto' if featured_game else None),
+            'teams_to_watch': _make_json_safe(teams_to_watch),
+            'other_today_games': _make_json_safe(other_games),
+            'today_games_count': len(todays_games),
+        }), 200
+    except Exception as exc:
+        print(f"Home content fetch error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
 
 # ================= QOTD API =================
 
@@ -2014,6 +3884,258 @@ def vote_qotd_comment():
 
 # ================= FAVORITES / ALERTS / GAME COMMENTS API =================
 
+@app.route('/api/auth/register', methods=['POST'])
+def register_auth_user():
+    ensure_user_account_columns()
+    data = request.get_json() or {}
+
+    email = str(data.get('email') or '').strip().lower()
+    username = str(data.get('username') or '').strip()
+    display_name = str(data.get('display_name') or '').strip()
+    password = str(data.get('password') or '')
+
+    if not email or '@' not in email:
+        return jsonify({'error': 'A valid email is required.'}), 400
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters.'}), 400
+    if username and len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters.'}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT user_id FROM users WHERE email = %s LIMIT 1", (email,))
+        if cursor.fetchone():
+            cursor.close()
+            return jsonify({'error': 'That email is already in use.'}), 409
+
+        if username:
+            cursor.execute("SELECT user_id FROM users WHERE username = %s LIMIT 1", (username,))
+            if cursor.fetchone():
+                cursor.close()
+                return jsonify({'error': 'That username is already taken.'}), 409
+
+        cursor.execute(
+            """
+            INSERT INTO users (email, username, display_name, bio, password_hash, role)
+            VALUES (%s, %s, %s, %s, %s, 'base')
+            """,
+            (email, username or None, display_name or None, '', generate_password_hash(password)),
+        )
+        connection.commit()
+        user_id = cursor.lastrowid
+
+        cursor.execute(
+            """
+            SELECT user_id, email, username, display_name, bio, profile_image_url, role
+            FROM users
+            WHERE user_id = %s
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        user = _normalize_auth_user_row(cursor.fetchone())
+        cursor.close()
+
+        token = _issue_auth_token(user_id)
+        return jsonify({'token': token, 'user': user}), 201
+    except Exception as exc:
+        print(f"Register error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login_auth_user():
+    ensure_user_account_columns()
+    data = request.get_json() or {}
+
+    identifier = str(data.get('identifier') or data.get('email') or '').strip()
+    password = str(data.get('password') or '')
+
+    if not identifier or not password:
+        return jsonify({'error': 'Identifier and password are required.'}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        normalized_identifier = identifier.lower()
+        if normalized_identifier == 'admin' and password == 'admin':
+            row = _get_or_create_default_admin_user(connection)
+            token = _issue_auth_token(row.get('user_id'))
+            return jsonify({'token': token, 'user': _normalize_auth_user_row(row)}), 200
+
+        cursor = connection.cursor(dictionary=True)
+        row = _get_auth_user_by_identifier(cursor, identifier)
+        cursor.close()
+
+        if not row or not row.get('password_hash') or not check_password_hash(row.get('password_hash'), password):
+            return jsonify({'error': 'Invalid login credentials.'}), 401
+
+        token = _issue_auth_token(row.get('user_id'))
+        return jsonify({'token': token, 'user': _normalize_auth_user_row(row)}), 200
+    except Exception as exc:
+        print(f"Login error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout_auth_user():
+    auth_header = request.headers.get('Authorization', '').strip()
+    token = ''
+    if auth_header.lower().startswith('bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+    elif request.headers.get('X-Auth-Token'):
+        token = request.headers.get('X-Auth-Token', '').strip()
+
+    if token:
+        AUTH_SESSIONS.pop(token, None)
+
+    return jsonify({'success': True}), 200
+
+
+@app.route('/api/users/<int:user_id>/profile', methods=['GET'])
+def get_user_profile(user_id):
+    ensure_user_account_columns()
+
+    auth_user_id = _get_authorized_user_id()
+    if auth_user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT user_id, email, username, display_name, bio, profile_image_url, role
+            FROM users
+            WHERE user_id = %s
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+
+        if not row:
+            return jsonify({'error': 'User not found'}), 404
+
+        return jsonify(_normalize_auth_user_row(row)), 200
+    except Exception as exc:
+        print(f"Profile fetch error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
+@app.route('/api/users/<int:user_id>/profile', methods=['PUT'])
+def update_user_profile(user_id):
+    ensure_user_account_columns()
+
+    auth_user_id = _get_authorized_user_id()
+    if auth_user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    email = str(data.get('email') or '').strip().lower()
+    username = str(data.get('username') or '').strip()
+    display_name = str(data.get('display_name') or '').strip()
+    bio = str(data.get('bio') or '').strip()
+    profile_image_url = str(data.get('profile_image_url') or '').strip()
+    current_password = str(data.get('current_password') or '')
+    new_password = str(data.get('new_password') or '')
+
+    if not email or '@' not in email:
+        return jsonify({'error': 'A valid email is required.'}), 400
+    if username and len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters.'}), 400
+    if new_password and len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters.'}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT user_id, email, username, display_name, bio, profile_image_url, password_hash, role
+            FROM users
+            WHERE user_id = %s
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        existing = cursor.fetchone()
+        if not existing:
+            cursor.close()
+            return jsonify({'error': 'User not found'}), 404
+
+        cursor.execute("SELECT user_id FROM users WHERE email = %s AND user_id <> %s LIMIT 1", (email, user_id))
+        if cursor.fetchone():
+            cursor.close()
+            return jsonify({'error': 'That email is already in use.'}), 409
+
+        if username:
+            cursor.execute("SELECT user_id FROM users WHERE username = %s AND user_id <> %s LIMIT 1", (username, user_id))
+            if cursor.fetchone():
+                cursor.close()
+                return jsonify({'error': 'That username is already taken.'}), 409
+
+        password_hash = existing.get('password_hash')
+        if new_password:
+            if not password_hash or not current_password or not check_password_hash(password_hash, current_password):
+                cursor.close()
+                return jsonify({'error': 'Current password is incorrect.'}), 400
+            password_hash = generate_password_hash(new_password)
+
+        cursor.execute(
+            """
+            UPDATE users
+            SET email = %s,
+                username = %s,
+                display_name = %s,
+                bio = %s,
+                profile_image_url = %s,
+                password_hash = %s
+            WHERE user_id = %s
+            """,
+            (email, username or None, display_name or None, bio, profile_image_url or None, password_hash, user_id),
+        )
+        connection.commit()
+
+        cursor.execute(
+            """
+            SELECT user_id, email, username, display_name, bio, profile_image_url, role
+            FROM users
+            WHERE user_id = %s
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        updated = _normalize_auth_user_row(cursor.fetchone())
+        cursor.close()
+        return jsonify(updated), 200
+    except Exception as exc:
+        print(f"Profile update error: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        connection.close()
+
+
 @app.route('/api/users/<int:user_id>/favorites', methods=['GET'])
 def get_user_favorites(user_id):
     if not get_user_by_id(user_id):
@@ -2045,7 +4167,7 @@ def get_user_favorites(user_id):
         )
         rows = cursor.fetchall() or []
         cursor.close()
-        return jsonify(rows), 200
+        return jsonify(_make_json_safe(rows)), 200
     except Error as e:
         return jsonify({'error': str(e)}), 500
     finally:
@@ -2167,7 +4289,7 @@ def get_game_comments(game_identifier):
         )
         rows = cursor.fetchall() or []
         cursor.close()
-        return jsonify(rows), 200
+        return jsonify(_make_json_safe(rows)), 200
     except Error as e:
         return jsonify({'error': str(e)}), 500
     finally:
@@ -2521,7 +4643,7 @@ def get_user_watchlist(user_id):
     if error:
         status = 500 if error == 'Database connection failed' else 500
         return jsonify({'error': error}), status
-    return jsonify(rows), 200
+    return jsonify(_make_json_safe(rows)), 200
 
 
 @app.route('/api/games/<game_identifier>/watchlist/<int:user_id>', methods=['GET'])
@@ -2628,7 +4750,7 @@ def get_user_alerts(user_id):
     rows, error = _get_user_game_collection(user_id, 'alerts')
     if error:
         return jsonify({'error': error}), 500
-    return jsonify(rows), 200
+    return jsonify(_make_json_safe(rows)), 200
 
 
 @app.route('/api/users/<int:user_id>/comment-replies', methods=['GET'])
@@ -2639,7 +4761,7 @@ def get_user_comment_replies(user_id):
     rows, error = _get_user_comment_replies(user_id)
     if error:
         return jsonify({'error': error}), 500
-    return jsonify(rows), 200
+    return jsonify(_make_json_safe(rows)), 200
 
 
 @app.route('/api/users/<int:user_id>/myfeed', methods=['GET'])
@@ -2697,12 +4819,12 @@ def get_user_myfeed(user_id):
     if reply_error:
         return jsonify({'error': reply_error}), 500
 
-    return jsonify({
+    return jsonify(_make_json_safe({
         'favorites': favorites,
         'watchlist': watchlist_rows,
         'alerts': alert_rows,
         'comment_replies': reply_rows,
-    }), 200
+    })), 200
 
 
 # ================= HEALTH CHECK =================
@@ -2727,6 +4849,9 @@ def serve_static(filename):
     return send_from_directory(".", filename)
 
 if __name__ == '__main__':
+
+    ensure_user_account_columns()
+    ensure_admin_homepage_schema()
 
     print("Starting Flask API server on http://localhost:8000")
 
