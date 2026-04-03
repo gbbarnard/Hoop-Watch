@@ -7,6 +7,10 @@ const accountForm = document.getElementById('account-form');
 const logoutButton = document.getElementById('account-logout-btn');
 const avatarBox = document.getElementById('account-avatar');
 const adminPanel = document.getElementById('account-admin-panel');
+const ACCOUNT_USER_ID_KEY = window.HoopWatchAuth?.HOOPWATCH_USER_ID_KEY || 'hoopwatch_user_id';
+
+const welcomeTitle = document.getElementById('account-welcome-title');
+const welcomeSubtitle = document.getElementById('account-welcome-subtitle');
 
 function getAuthHeaders() {
   const token = window.HoopWatchAuth.readStoredAuthToken();
@@ -28,8 +32,39 @@ function clearAccountMessage() {
   messageBox.className = 'auth-message';
 }
 
+function readStoredAccountIdentity() {
+  const storedUser = window.HoopWatchAuth.readStoredAuthUser();
+  const token = window.HoopWatchAuth.readStoredAuthToken();
+  const rawUserId = localStorage.getItem(ACCOUNT_USER_ID_KEY) || storedUser?.user_id || '';
+  const parsedUserId = Number(rawUserId);
+
+  return {
+    user: storedUser,
+    token,
+    userId: Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : null,
+  };
+}
+
+function updateWelcomeBanner(user) {
+  if (!welcomeTitle || !welcomeSubtitle) return;
+
+  const username = (user?.username || user?.display_name || user?.email || '').toString().trim();
+  if (username) {
+    welcomeTitle.textContent = `Welcome ${username}`;
+    welcomeSubtitle.textContent = 'You are signed in to your account.';
+  } else {
+    welcomeTitle.textContent = 'Welcome';
+    welcomeSubtitle.textContent = 'You are signed in to your account.';
+  }
+}
+
+function setAccountGateState(allowed) {
+  lockedView.hidden = !allowed;
+  contentView.hidden = !allowed;
+}
+
 function setAvatarText(user) {
-  const source = user.display_name || user.username || user.email || 'HW';
+  const source = user?.display_name || user?.username || user?.email || 'HW';
   const initials = source
     .split(/\s+/)
     .filter(Boolean)
@@ -49,6 +84,16 @@ function syncAdminPanel(user) {
   }
 }
 
+function populateAccountForm(user = {}) {
+  document.getElementById('account-display-name').value = user.display_name || '';
+  document.getElementById('account-username').value = user.username || '';
+  document.getElementById('account-email').value = user.email || '';
+  document.getElementById('account-bio').value = user.bio || '';
+  setAvatarText(user);
+  syncAdminPanel(user);
+  updateWelcomeBanner(user);
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
@@ -57,35 +102,50 @@ async function fetchJson(url, options = {}) {
 }
 
 async function loadAccountProfile() {
-  const user = window.HoopWatchAuth.readStoredAuthUser();
-  const token = window.HoopWatchAuth.readStoredAuthToken();
+  const { user, token, userId } = readStoredAccountIdentity();
 
-  if (!user || !token) {
-    lockedView.hidden = false;
-    contentView.hidden = true;
+  if (!user && (!token || !userId)) {
+    setAccountGateState(false);
     syncAdminPanel(null);
+    updateWelcomeBanner(null);
     return;
   }
 
-  lockedView.hidden = true;
-  contentView.hidden = false;
+  setAccountGateState(true);
+
+  if (user) {
+    populateAccountForm(user);
+    clearAccountMessage();
+  }
+
+  if (!token || !userId) {
+    showAccountMessage('Showing your saved account info. Log in again if you want to refresh or edit this page.', 'error');
+    return;
+  }
 
   try {
-    const profile = await fetchJson(`${ACCOUNT_API_BASE}/api/users/${user.user_id}/profile`, {
+    const profile = await fetchJson(`${ACCOUNT_API_BASE}/api/users/${userId}/profile`, {
       headers: {
         Authorization: `Bearer ${token}`
       }
     });
 
-    document.getElementById('account-display-name').value = profile.display_name || '';
-    document.getElementById('account-username').value = profile.username || '';
-    document.getElementById('account-email').value = profile.email || '';
-    document.getElementById('account-bio').value = profile.bio || '';
-    setAvatarText(profile);
-    syncAdminPanel(profile);
+    populateAccountForm(profile);
     window.HoopWatchAuth.storeAuthSession(profile, token);
+    clearAccountMessage();
   } catch (error) {
-    showAccountMessage(error.message || 'Could not load account profile.');
+    const message = error.message || 'Could not load account profile.';
+
+    if (user) {
+      populateAccountForm(user);
+      showAccountMessage('Showing your saved account info right now. Log in again if this page still will not refresh.', 'error');
+      return;
+    }
+
+    setAccountGateState(false);
+    syncAdminPanel(null);
+    updateWelcomeBanner(null);
+    showAccountMessage(message, 'error');
   }
 }
 
@@ -93,17 +153,16 @@ accountForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   clearAccountMessage();
 
-  const user = window.HoopWatchAuth.readStoredAuthUser();
-  const token = window.HoopWatchAuth.readStoredAuthToken();
-  if (!user || !token) {
-    lockedView.hidden = false;
-    contentView.hidden = true;
-    syncAdminPanel(null);
+  const { token, userId, user } = readStoredAccountIdentity();
+  if (!token || !userId) {
+    setAccountGateState(true);
+    if (user) populateAccountForm(user);
+    showAccountMessage('Please log in again before saving account changes.', 'error');
     return;
   }
 
   try {
-    const updated = await fetchJson(`${ACCOUNT_API_BASE}/api/users/${user.user_id}/profile`, {
+    const updated = await fetchJson(`${ACCOUNT_API_BASE}/api/users/${userId}/profile`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -117,13 +176,16 @@ accountForm?.addEventListener('submit', async (event) => {
     });
 
     window.HoopWatchAuth.storeAuthSession(updated, token);
-    setAvatarText(updated);
-    syncAdminPanel(updated);
+    populateAccountForm(updated);
     document.getElementById('account-current-password').value = '';
     document.getElementById('account-new-password').value = '';
     showAccountMessage('Account updated successfully.', 'success');
   } catch (error) {
-    showAccountMessage(error.message || 'Could not update account.');
+    const message = error.message || 'Could not update account.';
+    if (user) {
+      populateAccountForm(user);
+    }
+    showAccountMessage(message, 'error');
   }
 });
 
