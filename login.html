@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | HoopWatch</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+      <span class="brand-name">HoopWatch</span>
+    </div>
+    <ul class="nav-menu">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="games.html">Season Games</a></li>
+      <li><a href="teams.html">Teams</a></li>
+      <li><a href="myfeed.html">My Feed</a></li>
+      <li><a href="qotd.html">QOTD</a></li>
+    </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+  </nav>
+
+  <main class="container auth-page-shell">
+    <section class="auth-card">
+      <div class="auth-tab-row">
+        <button class="auth-tab-btn active" type="button" data-auth-tab="login">Log In</button>
+        <button class="auth-tab-btn" type="button" data-auth-tab="register">Create Account</button>
+      </div>
+
+      <div id="auth-message" class="auth-message" hidden></div>
+
+      <form id="login-form" class="auth-form active">
+        <h1>Welcome back</h1>
+        <p>Use your email or username to sign in.</p>
+        <label>
+          Email or Username
+          <input type="text" id="login-identifier" required>
+        </label>
+        <label>
+          Password
+          <input type="password" id="login-password" required>
+        </label>
+        <button type="submit" class="primary-auth-btn">Log In</button>
+      </form>
+
+      <form id="register-form" class="auth-form" hidden>
+        <h1>Create your account</h1>
+        <p>Set up a HoopWatch account so favorites and feed items stay connected to you.</p>
+        <label>
+          Name
+          <input type="text" id="register-display-name" required>
+        </label>
+        <label>
+          Username
+          <input type="text" id="register-username" required>
+        </label>
+        <label>
+          Email
+          <input type="email" id="register-email" required>
+        </label>
+        <label>
+          Password
+          <input type="password" id="register-password" minlength="6" required>
+        </label>
+        <label>
+          Confirm Password
+          <input type="password" id="register-confirm-password" minlength="6" required>
+        </label>
+        <button type="submit" class="primary-auth-btn">Create Account</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>

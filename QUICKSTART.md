@@ -28,3 +28,54 @@ Open your static server / dev server and visit:
 - `qotd.html`
 
 **Important:** The frontend JS calls the backend at `http://localhost:8000`.
+
+For the roster dropdown + player stats flow, see `docs/ROSTER_PLAYER_STATS_GUIDE.md`.
+
+
+## Ball Don't Lie player stat sync
+
+
+1. Put your API key in `.env`:
+   `BALLDONTLIE_API_KEY=your_key_here`
+2. Run:
+   `python sync_player_stats_balldontlie.py --only-missing`
+
+
+
+## Free player stats sync (no paid APIs)
+
+To fill `player_regular_season_stats` using only your local/cached NBA CDN box scores:
+
+```bash
+python sync_player_stats_free.py --refresh-cache --repair-bad-cache --only-missing --current-team-only
+```
+
+Windows:
+
+```bat
+sync_player_stats_free.bat
+```
+
+This script:
+- refreshes any missing completed-game cache files from the NBA CDN
+- repairs unreadable/empty cache files
+- builds player regular-season stats from the cached box scores only
+- leaves `players.team_id` alone so it does not break rosters
+- writes a report to `database/player_stats_free_sync_report.json`
+
+
+## Audit and repair bad NBA player IDs
+
+Dry run for players missing stats only:
+
+```bash
+python audit_repair_nba_player_ids.py --only-missing-stats
+```
+
+Apply the suggested fixes to the `players.nba_player_id` values:
+
+```bash
+python audit_repair_nba_player_ids.py --only-missing-stats --apply
+```
+
+This uses only the local cached NBA CDN box score files. It will not guess when the match is ambiguous.

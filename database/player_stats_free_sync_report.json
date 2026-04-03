@@ -1,0 +1,23 @@
+{
+  "players_upserted": 597,
+  "stats_rows_upserted": 531,
+  "missing_player_mappings": [],
+  "players_still_missing_stats": [
+    {
+      "player_id": 14058,
+      "nba_player_id": "1642490",
+      "player_name": "Josh Oduro",
+      "team_abbreviation": "NOP",
+      "position": null,
+      "jersey_number": 13
+    },
+    {
+      "player_id": 13486,
+      "nba_player_id": "1642850",
+      "player_name": "Thomas Sorber",
+      "team_abbreviation": "OKC",
+      "position": null,
+      "jersey_number": 12
+    }
+  ]
+}

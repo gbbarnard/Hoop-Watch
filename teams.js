@@ -44,6 +44,30 @@ async function fetchJson(url, options = {}) {
   return data;
 }
 
+function showToast(message, type = 'success', duration = 2800) {
+  const container = document.querySelector('.toast-container') || (() => {
+    const el = document.createElement('div');
+    el.className = 'toast-container';
+    document.body.appendChild(el);
+    return el;
+  })();
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(16px)';
+  }, duration);
+
+  setTimeout(() => {
+    toast.remove();
+    if (!container.children.length) container.remove();
+  }, duration + 260);
+}
+
 function computeDisplayName(team) {
   const name = safeText(team.name);
   const city = safeText(team.city);
@@ -179,6 +203,7 @@ async function toggleTeamFavoriteFromCard(event, teamId) {
         method: 'DELETE'
       });
       FAVORITE_TEAM_IDS.delete(numericTeamId);
+      showToast('Removed team from favorites', 'success');
     } else {
       await fetchJson(`${API_BASE}/api/users/${userId}/favorites`, {
         method: 'POST',
@@ -186,11 +211,12 @@ async function toggleTeamFavoriteFromCard(event, teamId) {
         body: JSON.stringify({ team_id: numericTeamId })
       });
       FAVORITE_TEAM_IDS.add(numericTeamId);
+      showToast('Added team to favorites', 'success');
     }
 
     updateView();
   } catch (error) {
-    alert(error.message || 'Could not update favorite team.');
+    showToast(error.message || 'Could not update favorite team.', 'error');
   } finally {
     button.disabled = false;
   }

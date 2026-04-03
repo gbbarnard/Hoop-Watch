@@ -1,6 +1,23 @@
 const API_URL = 'http://localhost:8000';
 const USER_ID_STORAGE_KEY = 'hoopwatch_user_id';
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getLocalDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 const teamLogos = {
     'ATL': 'https://cdn.nba.com/logos/nba/1610612737/primary/L/logo.svg',
     'BOS': 'https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg',
@@ -42,16 +59,9 @@ function getUserIdFromStorageOrPrompt() {
     const saved = Number(String(readSavedUserId()).trim());
     if (saved > 0) return saved;
 
-    const entered = window.prompt('Enter your demo user ID to save game alerts and watchlisted games. Example: 2');
-    const userId = Number(String(entered || '').trim());
-
-    if (!userId || userId < 1) {
-        alert('A valid user ID is required to save alerts and watchlisted games.');
-        return null;
-    }
-
-    localStorage.setItem(USER_ID_STORAGE_KEY, String(userId));
-    return userId;
+    alert('Please log in to save game alerts and watchlisted games.');
+    window.location.href = 'login.html';
+    return null;
 }
 
 async function fetchJson(url, options = {}) {
@@ -63,6 +73,30 @@ async function fetchJson(url, options = {}) {
     }
 
     return data;
+}
+
+function showToast(message, type = 'success', duration = 2800) {
+    const container = document.querySelector('.toast-container') || (() => {
+        const el = document.createElement('div');
+        el.className = 'toast-container';
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(16px)';
+    }, duration);
+
+    setTimeout(() => {
+        toast.remove();
+        if (!container.children.length) container.remove();
+    }, duration + 260);
 }
 
 function updateAlertButtonState(button, isActive) {
@@ -114,6 +148,7 @@ async function toggleGameWatchlistFromCard(event, gameId) {
                 method: 'DELETE'
             });
             updateWatchlistButtonState(button, false);
+            showToast('Removed game from watchlist', 'success');
         } else {
             await fetchJson(`${API_URL}/api/games/${gameId}/watchlist`, {
                 method: 'POST',
@@ -121,9 +156,10 @@ async function toggleGameWatchlistFromCard(event, gameId) {
                 body: JSON.stringify({ user_id: userId })
             });
             updateWatchlistButtonState(button, true);
+            showToast('Added game to watchlist', 'success');
         }
     } catch (error) {
-        alert(error.message || 'Could not update watchlist.');
+        showToast(error.message || 'Could not update watchlist.', 'error');
     } finally {
         button.disabled = false;
     }
@@ -166,6 +202,7 @@ async function toggleGameAlertFromCard(event, gameId) {
                 method: 'DELETE'
             });
             updateAlertButtonState(button, false);
+            showToast('Game alert removed', 'success');
         } else {
             await fetchJson(`${API_URL}/api/games/${gameId}/alerts`, {
                 method: 'POST',
@@ -173,9 +210,10 @@ async function toggleGameAlertFromCard(event, gameId) {
                 body: JSON.stringify({ user_id: userId })
             });
             updateAlertButtonState(button, true);
+            showToast('Game alert saved', 'success');
         }
     } catch (error) {
-        alert(error.message || 'Could not update game alert.');
+        showToast(error.message || 'Could not update game alert.', 'error');
     } finally {
         button.disabled = false;
     }
@@ -183,109 +221,317 @@ async function toggleGameAlertFromCard(event, gameId) {
 
 window.toggleGameAlertFromCard = toggleGameAlertFromCard;
 
-async function fetchGames() {
-    try {
-        const response = await fetch(`${API_URL}/api/games/live`);
-        const games = await response.json();
-        const container = document.getElementById('games-container');
+function normalizeGameId(game) {
+    return String(game?.gameId || game?.game_id || game?.nba_game_id || game?.id || '').trim();
+}
 
-        if (!games || games.length === 0) {
-            container.innerHTML = '<div class="no-games">No games scheduled for today</div>';
-            return;
-        }
+function canOpenGameDetail(game) {
+    return ['live', 'final'].includes(String(game?.status_key || '').trim().toLowerCase());
+}
 
-        container.innerHTML = games.map((game) => createGameCard(game)).join('');
-        await hydrateAlertButtons(games);
-        await hydrateWatchlistButtons(games);
-    } catch (error) {
-        console.error('Error fetching games:', error);
-        document.getElementById('games-container').innerHTML =
-            '<div class="error">Failed to load games. Please try again.</div>';
+function buildHomeGameDetailHref(game) {
+    const gameId = normalizeGameId(game);
+    return gameId ? `game-detail.html?id=${encodeURIComponent(gameId)}&from=home` : '';
+}
+
+function formatTipoffTime(startTime) {
+    const value = String(startTime || '').trim();
+    if (!value) return '';
+
+    const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return value;
+
+    let hours = Number(match[1]);
+    const minutes = match[2];
+    const suffix = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes} ${suffix} ET`;
+}
+
+function getGameStatusBadge(game) {
+    const rawKey = String(game?.status_key || '').trim().toLowerCase();
+    const statusKey = rawKey === 'scheduled' ? 'upcoming' : (rawKey || 'upcoming');
+    const statusText = statusKey === 'upcoming'
+        ? 'Upcoming'
+        : String(game?.status || (statusKey === 'live' ? 'Live' : 'Final'));
+    return { statusKey, statusText };
+}
+
+function getGameTimeLabel(game) {
+    const { statusKey } = getGameStatusBadge(game);
+    if (statusKey === 'live') {
+        return String(game?.game_time || game?.status || 'Live');
     }
+    if (statusKey === 'final') {
+        return 'Final';
+    }
+    return String(game?.game_time || formatTipoffTime(game?.start_time) || 'Upcoming');
+}
+
+function getTeamLogo(team) {
+    if (team?.logo_url) return team.logo_url;
+    if (team?.abbreviation && teamLogos[team.abbreviation]) return teamLogos[team.abbreviation];
+    if (team?.nba_team_id) return `https://cdn.nba.com/logos/nba/${team.nba_team_id}/primary/L/logo.svg`;
+    return '';
 }
 
 function createGameCard(game) {
-    const homeTeam = game.home_team || {};
-    const awayTeam = game.away_team || {};
+    const homeTeam = game?.home_team || {};
+    const awayTeam = game?.away_team || {};
+    const gameId = normalizeGameId(game);
+    const detailHref = canOpenGameDetail(game) ? buildHomeGameDetailHref(game) : '';
+    const { statusKey, statusText } = getGameStatusBadge(game);
+    const gameTime = getGameTimeLabel(game);
 
-    const homeAbbr = homeTeam.abbreviation || 'N/A';
-    const awayAbbr = awayTeam.abbreviation || 'N/A';
-
-    const homeLogo = teamLogos[homeAbbr] || '🏀';
-    const awayLogo = teamLogos[awayAbbr] || '🏀';
-
-    const statusClass = game.status?.toLowerCase() || 'upcoming';
-    const statusText = game.status || 'Upcoming';
-    const gameTime = game.game_time || 'TBD';
-
-    const homeScore = game.home_score !== null && game.home_score !== undefined ? game.home_score : '-';
-    const awayScore = game.away_score !== null && game.away_score !== undefined ? game.away_score : '-';
-
-    const homeRecord = homeTeam.wins !== undefined ? `${homeTeam.wins}W - ${homeTeam.losses}L` : '';
-    const awayRecord = awayTeam.wins !== undefined ? `${awayTeam.wins}W - ${awayTeam.losses}L` : '';
-
-    const homeId = homeTeam.id || '';
-    const awayId = awayTeam.id || '';
-    const gameId = game.gameId || game.game_id || game.id || '';
+    const homeLabel = homeTeam?.full_name || `${homeTeam?.city || ''} ${homeTeam?.name || ''}`.trim() || homeTeam?.abbreviation || 'Home Team';
+    const awayLabel = awayTeam?.full_name || `${awayTeam?.city || ''} ${awayTeam?.name || ''}`.trim() || awayTeam?.abbreviation || 'Away Team';
+    const homeRecord = homeTeam?.wins !== undefined && homeTeam?.losses !== undefined ? `${homeTeam.wins}W - ${homeTeam.losses}L` : '';
+    const awayRecord = awayTeam?.wins !== undefined && awayTeam?.losses !== undefined ? `${awayTeam.wins}W - ${awayTeam.losses}L` : '';
+    const homeScore = game?.home_score !== null && game?.home_score !== undefined ? game.home_score : '-';
+    const awayScore = game?.away_score !== null && game?.away_score !== undefined ? game.away_score : '-';
+    const homeLogo = getTeamLogo(homeTeam);
+    const awayLogo = getTeamLogo(awayTeam);
 
     return `
-        <div class="game-card" onclick="window.location.href='game-detail.html?id=${gameId}'" style="cursor: pointer;">
-            <span class="game-status ${statusClass}">${statusText}</span>
+        <div class="game-card season-game-card ${detailHref ? 'clickable-game-card' : ''}" ${detailHref ? `data-detail-href="${escapeHtml(detailHref)}" role="link" tabindex="0"` : ''}>
+            <span class="game-status ${escapeHtml(statusKey)}">${escapeHtml(statusText)}</span>
             <button
                 class="card-icon-btn game-watchlist-btn"
                 type="button"
-                data-game-id="${gameId}"
-                onclick="toggleGameWatchlistFromCard(event, '${gameId}')"
+                data-game-id="${escapeHtml(gameId)}"
+                data-action="watchlist"
                 aria-label="Toggle game watchlist"
                 title="Add game to watchlist"
+                onclick="toggleGameWatchlistFromCard(event, '${escapeHtml(gameId)}')"
             >
                 <span>🔖</span>
             </button>
             <button
                 class="card-icon-btn game-alert-btn"
                 type="button"
-                data-game-id="${gameId}"
-                onclick="toggleGameAlertFromCard(event, '${gameId}')"
+                data-game-id="${escapeHtml(gameId)}"
+                data-action="alert"
                 aria-label="Toggle game alert"
                 title="Save game alert"
+                onclick="toggleGameAlertFromCard(event, '${escapeHtml(gameId)}')"
             >
                 <span>🔔</span>
             </button>
-            <div class="game-time">${gameTime}</div>
+            <div class="game-time">${escapeHtml(gameTime)}</div>
             <div class="game-teams">
                 <div class="team">
-                    <a href="team-detail.html?id=${awayId}" onclick="event.stopPropagation()">
-                        ${typeof awayLogo === 'string' && awayLogo.startsWith('http')
-            ? `<img src="${awayLogo}" alt="${awayTeam.full_name}" class="team-logo" />`
-            : `<div class="team-logo">${awayLogo}</div>`
-        }
-                        <div class="team-name">${awayTeam.full_name || 'Unknown'}</div>
-                        ${awayRecord ? `<div class="team-record">${awayRecord}</div>` : ''}
-                        <div class="team-score">${awayScore}</div>
-                    </a>
+                    ${awayLogo ? `<img src="${escapeHtml(awayLogo)}" alt="${escapeHtml(awayLabel)}" class="team-logo" />` : '<div class="team-logo">🏀</div>'}
+                    <div class="team-name">${escapeHtml(awayLabel)}</div>
+                    ${awayRecord ? `<div class="team-record">${escapeHtml(awayRecord)}</div>` : ''}
+                    <div class="team-score">${escapeHtml(awayScore)}</div>
                 </div>
                 <div class="vs">VS</div>
                 <div class="team">
-                    <a href="team-detail.html?id=${homeId}" onclick="event.stopPropagation()">
-                        ${typeof homeLogo === 'string' && homeLogo.startsWith('http')
-            ? `<img src="${homeLogo}" alt="${homeTeam.full_name}" class="team-logo" />`
-            : `<div class="team-logo">${homeLogo}</div>`
-        }
-                        <div class="team-name">${homeTeam.full_name || 'Unknown'}</div>
-                        ${homeRecord ? `<div class="team-record">${homeRecord}</div>` : ''}
-                        <div class="team-score">${homeScore}</div>
-                    </a>
+                    ${homeLogo ? `<img src="${escapeHtml(homeLogo)}" alt="${escapeHtml(homeLabel)}" class="team-logo" />` : '<div class="team-logo">🏀</div>'}
+                    <div class="team-name">${escapeHtml(homeLabel)}</div>
+                    ${homeRecord ? `<div class="team-record">${escapeHtml(homeRecord)}</div>` : ''}
+                    <div class="team-score">${escapeHtml(homeScore)}</div>
                 </div>
             </div>
         </div>
     `;
 }
 
-function manualRefresh() {
-    document.getElementById('games-container').innerHTML =
-        '<div class="loading"><div class="spinner"></div>Refreshing...</div>';
-    fetchGames();
+function normalizeTeamDisplayName(team) {
+    const rawName = String(team?.name || '').trim();
+    const city = String(team?.city || '').trim();
+    if (!rawName) return city || (team?.abbreviation || 'Team');
+    if (!city) return rawName;
+    return rawName.toLowerCase().startsWith(city.toLowerCase()) ? rawName : `${city} ${rawName}`.trim();
 }
 
-fetchGames();
-setInterval(fetchGames, 30000);
+document.addEventListener('click', (event) => {
+    const detailCard = event.target.closest('.clickable-game-card[data-detail-href]');
+    if (!detailCard) return;
+    if (event.target.closest('button')) return;
+    const href = detailCard.getAttribute('data-detail-href');
+    if (href) {
+        window.location.href = href;
+    }
+});
+
+document.addEventListener('keydown', (event) => {
+    const detailCard = event.target.closest('.clickable-game-card[data-detail-href]');
+    if (!detailCard) return;
+    if (!['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    const href = detailCard.getAttribute('data-detail-href');
+    if (href) {
+        window.location.href = href;
+    }
+});
+
+function renderHomeQotdCard(question, dateString) {
+    const card = document.getElementById('home-qotd-card');
+    if (!card) return;
+
+    const qotdHref = `qotd.html?date=${encodeURIComponent(dateString)}`;
+
+    if (!question || !question.question_id) {
+        card.innerHTML = `
+            <a href="${qotdHref}" class="home-qotd-link">
+                <div class="home-qotd-label">QOTD</div>
+                <h2>No question posted yet</h2>
+                <p>Open the QOTD page to check again later.</p>
+            </a>
+        `;
+        card.classList.remove('home-qotd-loading');
+        return;
+    }
+
+    card.innerHTML = `
+        <a href="${qotdHref}" class="home-qotd-link">
+            <div class="home-qotd-label">QOTD</div>
+            <h2>${escapeHtml(question.question_text)}</h2>
+            <p>Click here to answer today’s question.</p>
+        </a>
+    `;
+    card.classList.remove('home-qotd-loading');
+}
+
+function renderFactOfTheDay(factText) {
+    const card = document.getElementById('fact-of-the-day-card');
+    if (!card) return;
+
+    card.innerHTML = `
+        <div class="home-section-label">Fact of the Day</div>
+        <p>${escapeHtml(factText || 'No fact has been posted yet for today.')}</p>
+    `;
+}
+
+function renderFeaturedGame(featuredGame, source = 'auto') {
+    const container = document.getElementById('featured-game-container');
+    if (!container) return;
+
+    if (!featuredGame) {
+        container.innerHTML = '<div class="no-games">No featured game available right now.</div>';
+        return;
+    }
+
+    const sourceText = source === 'admin'
+        ? 'Picked by admin'
+        : 'Auto-picked from today’s games';
+
+    container.innerHTML = `
+        <div class="featured-game-shell">
+            <div class="featured-game-note">${escapeHtml(sourceText)}</div>
+            ${createGameCard(featuredGame)}
+        </div>
+    `;
+}
+
+function createTeamWatchCard(team) {
+    const teamId = team.team_id || team.id || '';
+    const abbreviation = team.abbreviation || '';
+    const logo = team.logo_url || teamLogos[abbreviation] || '🏀';
+    const fullName = normalizeTeamDisplayName(team);
+    const record = team.wins !== undefined && team.losses !== undefined
+        ? `${team.wins}W - ${team.losses}L`
+        : '';
+
+    return `
+        <a class="team-watch-card" href="team-detail.html?id=${encodeURIComponent(teamId)}">
+            <div class="team-watch-card-top">
+                ${typeof logo === 'string' && logo.startsWith('http')
+                    ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(fullName)}" class="team-watch-logo" />`
+                    : `<div class="team-watch-logo">${logo}</div>`
+                }
+                <div>
+                    <div class="team-watch-name">${escapeHtml(fullName)}</div>
+                    <div class="team-watch-abbr">${escapeHtml(abbreviation)}</div>
+                </div>
+            </div>
+            <div class="team-watch-record">${escapeHtml(record || 'Record unavailable')}</div>
+        </a>
+    `;
+}
+
+function renderTeamsToWatch(teams) {
+    const container = document.getElementById('teams-to-watch-container');
+    if (!container) return;
+
+    if (!teams || !teams.length) {
+        container.innerHTML = '<div class="no-games">No teams to watch picked for today.</div>';
+        return;
+    }
+
+    container.innerHTML = teams.map((team) => createTeamWatchCard(team)).join('');
+}
+
+async function hydrateHomeActionButtons(featuredGame, otherGames) {
+    const allGames = [];
+    if (featuredGame) allGames.push(featuredGame);
+    if (Array.isArray(otherGames)) allGames.push(...otherGames);
+    await hydrateAlertButtons(allGames);
+    await hydrateWatchlistButtons(allGames);
+}
+
+function renderOtherTodayGames(games) {
+    const container = document.getElementById('games-container');
+    if (!container) return;
+
+    if (!games || !games.length) {
+        container.innerHTML = '<div class="no-games">No other games left for today.</div>';
+        return;
+    }
+
+    container.innerHTML = games.map((game) => createGameCard(game)).join('');
+}
+
+async function loadHomePage() {
+    const today = getLocalDateString();
+
+    try {
+        const homeData = await fetchJson(`${API_URL}/api/home-content/${today}`);
+        renderHomeQotdCard(homeData.qotd, today);
+        renderFactOfTheDay(homeData.fact_text);
+        renderFeaturedGame(homeData.featured_game, homeData.featured_game_source);
+        renderTeamsToWatch(homeData.teams_to_watch || []);
+        renderOtherTodayGames(homeData.other_today_games || []);
+
+        try {
+            await hydrateHomeActionButtons(homeData.featured_game, homeData.other_today_games || []);
+        } catch (hydrateError) {
+            console.error('Error hydrating home page action buttons:', hydrateError);
+        }
+    } catch (error) {
+        console.error('Error loading home page content:', error);
+        renderHomeQotdCard(null, today);
+        renderFactOfTheDay('Could not load today’s fact.');
+
+        const featuredContainer = document.getElementById('featured-game-container');
+        if (featuredContainer) {
+            featuredContainer.innerHTML = '<div class="error">Failed to load the featured game.</div>';
+        }
+
+        const teamsContainer = document.getElementById('teams-to-watch-container');
+        if (teamsContainer) {
+            teamsContainer.innerHTML = '<div class="error">Failed to load teams to watch.</div>';
+        }
+
+        const gamesContainer = document.getElementById('games-container');
+        if (gamesContainer) {
+            gamesContainer.innerHTML = '<div class="error">Failed to load today’s games. Please try again.</div>';
+        }
+    }
+}
+
+function manualRefresh() {
+    const featuredContainer = document.getElementById('featured-game-container');
+    const gamesContainer = document.getElementById('games-container');
+    if (featuredContainer) {
+        featuredContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Refreshing featured game...</div>';
+    }
+    if (gamesContainer) {
+        gamesContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Refreshing today’s games...</div>';
+    }
+    loadHomePage();
+}
+
+loadHomePage();
+setInterval(loadHomePage, 30000);

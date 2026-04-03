@@ -10,18 +10,20 @@
 </head>
 
 <body>
-  <nav class="navbar">
-    <div class="nav-brand">
-      <img alt="HoopWatch" class="logo-img" src="http://localhost:8000/assets/HoopWatch1.png" />
-      <span class="brand-name">HoopWatch</span>
-    </div>
-    <ul class="nav-menu">
-      <li><a href="index.html">Games</a></li>
-      <li><a href="teams.html">Teams</a></li>
-      <li><a class="active" href="qotd.html">QOTD</a></li>
-      <li><a href="myfeed.html">My Feed</a></li>
-    </ul>
-  </nav>
+      <nav class="navbar">
+        <div class="nav-brand">
+            <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
+            <span class="brand-name">HoopWatch</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
+            <li><a href="teams.html">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html" class="active">QOTD</a></li>
+        </ul>
+    <div class="nav-actions nav-auth-slot"></div>
+    </nav>
   <main class="container">
     <div class="hero-section" style="text-align:center;">
       <h1>Question of the Day</h1>
@@ -39,6 +41,7 @@
       </div>
     </div>
   </main>
+  <script src="auth.js"></script>
   <script>
     const dateInput = document.getElementById("dateSelector");
     const params = new URLSearchParams(window.location.search);
@@ -49,12 +52,20 @@
     let currentQuestionId = null;
     let allComments = [];
 
+    function isAdminViewer() {
+      const user = window.HoopWatchAuth?.readStoredAuthUser?.();
+      return window.HoopWatchAuth?.isAdminUser?.(user);
+  }
+
     dateInput.addEventListener("change", loadQuestion);
 
     function getMainUserId() {
-      const el = document.getElementById("userId");
-      const v = el ? el.value.trim() : "";
-      return v ? parseInt(v, 10) : null;
+      const saved = localStorage.getItem("hoopwatch_user_id");
+      const userId = parseInt(saved || "", 10);
+      if (Number.isFinite(userId)) return userId;
+      alert("Please log in to comment or vote on QOTD.");
+      window.location.href = "login.html";
+      return null;
     }
 
     async function loadQuestion() {
@@ -78,7 +89,7 @@
       <h2 class="qotd-question">${question.question_text}</h2>
 
       <div class="qotd-comment-form">
-        <input type="number" id="userId" class="qotd-input" placeholder="Your user ID (e.g., 1)">
+        <div class="qotd-user-note">Commenting as your logged-in account.</div>
         <textarea id="commentText" class="qotd-textarea" rows="3" placeholder="Write comment..."></textarea>
         <button class="reply-btn" onclick="postComment(null)">Post Comment</button>
       </div>
@@ -142,6 +153,7 @@
       <button class="vote-btn" onclick="voteComment(${comment.comment_id}, 1)">▲ ${up}</button>
       <button class="vote-btn" onclick="voteComment(${comment.comment_id}, -1)">▼ ${down}</button>
       <button class="reply-btn" onclick="showReplyBox(${comment.comment_id}, this)">Reply</button>
+      ${isAdminViewer() ? `<button class="delete-btn" onclick="deleteComment(${comment.comment_id})">🗑️</button>` : ""}
     </div>
 
     <div class="replies"></div>
@@ -168,7 +180,7 @@
       const replyBox = document.createElement("div");
       replyBox.className = "reply-box";
       replyBox.innerHTML = `
-    <input type="number" placeholder="Your user ID" class="replyUser">
+    <div class="qotd-user-note small">Replying as your logged-in account.</div>
     <textarea rows="2" placeholder="Write reply..." class="replyText"></textarea>
     <button class="reply-btn" onclick="submitReply(${parentId}, this)">Post Reply</button>
   `;
@@ -178,26 +190,26 @@
 
     async function submitReply(parentId, button) {
       const box = button.parentElement;
-      const userId = box.querySelector(".replyUser").value;
       const text = box.querySelector(".replyText").value;
 
-      if (!userId || !text) {
-        alert("Fill out both fields");
+      if (!text) {
+        alert("Write a reply first.");
         return;
       }
 
-      await postComment(parentId, userId, text);
+      await postComment(parentId, text);
 
       // Remove the reply box after posting
       box.remove();
     }
 
-    async function postComment(parentId, customUser = null, customText = null) {
-      const userId = customUser || (document.getElementById("userId") ? document.getElementById("userId").value : "");
+    async function postComment(parentId, customText = null) {
+      const userId = getMainUserId();
       const commentText = customText || (document.getElementById("commentText") ? document.getElementById("commentText").value : "");
 
-      if (!userId || !commentText) {
-        alert("Fill out both fields");
+      if (!userId) return;
+      if (!commentText) {
+        alert("Write a comment first.");
         return;
       }
 
@@ -225,16 +237,8 @@
     }
 
     async function voteComment(commentId, vote) {
-      let userId = getMainUserId();
-      if (!userId) {
-        const entered = prompt("Enter your user ID for voting:");
-        if (!entered) return;
-        userId = parseInt(entered, 10);
-        if (!Number.isFinite(userId)) {
-          alert("Invalid user ID");
-          return;
-        }
-      }
+      const userId = getMainUserId();
+      if (!userId) return;
 
       const res = await fetch("http://localhost:8000/api/qotd/vote", {
         method: "POST",
@@ -253,6 +257,34 @@
       }
 
       loadComments();
+    }
+
+    async function deleteComment(commentId) {
+      const user = window.HoopWatchAuth?.readStoredAuthUser?.();
+      const token = window.HoopWatchAuth?.readStoredAuthToken?.();
+
+      if (!window.HoopWatchAuth?.isAdminUser?.(user)) {
+        alert("Only admins can delete comments.");
+        return;
+      }
+
+      if (!confirm("Delete this comment?")) return;
+
+      const res = await fetch(`http://localhost:8000/api/admin/comments/qotd/${commentId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Error: " + (err.error || "Failed to delete"));
+        return;
+      }
+
+      loadComments(); // refresh UI
     }
 
     loadQuestion();

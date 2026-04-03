@@ -4,37 +4,77 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HoopWatch - Live NBA Games</title>
+    <title>HoopWatch | Live NBA Games</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-    <nav class="navbar">
+        <nav class="navbar">
         <div class="nav-brand">
             <img src="HoopWatch.png" alt="Hoop Watch Logo" class="logo-img">
             <span class="brand-name">HoopWatch</span>
         </div>
-
-        <div style="margin-left:auto; display:flex; gap:14px; align-items:center;">
-            <a href="teams.html" style="color:#111827; text-decoration:none; font-weight:600;">Teams</a>
-            <a href="qotd.html" style="color:#111827; text-decoration:none; font-weight:600;">QOTD</a>
-            <a href="myfeed.html" style="color:#111827; text-decoration:none; font-weight:600;">My Feed</a>
-        </div>
-
+        <ul class="nav-menu">
+            <li><a href="index.html" class="active">Home</a></li>
+            <li><a href="games.html">Season Games</a></li>
+            <li><a href="teams.html">Teams</a></li>
+            <li><a href="myfeed.html">My Feed</a></li>
+            <li><a href="qotd.html">QOTD</a></li>
+        </ul>
+    <div class="nav-actions nav-auth-slot"></div>
     </nav>
 
     <div class="container">
         <div class="hero-section">
             <h1>Live NBA Games</h1>
             <p>Today's games updating in real-time</p>
-            <button onclick="manualRefresh()" class="refresh-btn">Refresh Now</button>
+            <div class="hero-action-row">
+                <button onclick="manualRefresh()" class="refresh-btn">Refresh Now</button>
+                <a href="games.html" class="secondary-action-btn">See Full Season Schedule</a>
+            </div>
         </div>
 
-        <div id="games-container" class="games-container">
-            <div class="loading">Loading games...</div>
+        <div id="home-qotd-card" class="home-qotd-card home-qotd-loading">
+            <div class="home-qotd-label">QOTD</div>
+            <h2>Loading today’s question...</h2>
+            <p>Click to answer on the QOTD page.</p>
         </div>
+
+        <section id="fact-of-the-day-card" class="home-info-card">
+            <div class="home-section-label">Fact of the Day</div>
+            <p>Loading today’s fact...</p>
+        </section>
+
+        <section class="home-page-section">
+            <div class="home-section-header-row">
+                <h2>Featured Game</h2>
+            </div>
+            <div id="featured-game-container" class="games-container featured-game-container">
+                <div class="loading">Loading featured game...</div>
+            </div>
+        </section>
+
+        <section class="home-page-section">
+            <div class="home-section-header-row">
+                <h2>Teams to Watch</h2>
+            </div>
+            <div id="teams-to-watch-container" class="teams-to-watch-grid">
+                <div class="loading">Loading teams to watch...</div>
+            </div>
+        </section>
+
+        <section class="home-page-section">
+            <div class="home-section-header-row">
+                <h2>Other Today’s Games</h2>
+                <p>The featured game gets pulled out and shown above.</p>
+            </div>
+            <div id="games-container" class="games-container">
+                <div class="loading">Loading games...</div>
+            </div>
+        </section>
     </div>
 
+    <script src="auth.js"></script>
     <script src="app.js"></script>
 </body>
 
