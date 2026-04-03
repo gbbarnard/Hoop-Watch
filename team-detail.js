@@ -188,7 +188,6 @@ function buildPlayerInfoItems(player, payload) {
     weight_lb: player?.weight_lb ?? info.weight_lb,
     age: player?.age ?? info.age,
     birth_date: player?.birth_date ?? info.birth_date,
-    nba_player_id: player?.nba_player_id ?? info.nba_player_id,
   };
 
   return [
@@ -198,7 +197,6 @@ function buildPlayerInfoItems(player, payload) {
     { label: 'Weight', value: merged.weight_lb ? `${merged.weight_lb} lb` : null },
     { label: 'Age', value: merged.age },
     { label: 'Birth Date', value: formatPlayerBirthDate(merged.birth_date) },
-    { label: 'NBA Player ID', value: merged.nba_player_id },
   ];
 }
 
