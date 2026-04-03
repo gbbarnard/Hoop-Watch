@@ -45,12 +45,20 @@
   <script>
     const dateInput = document.getElementById("dateSelector");
     const params = new URLSearchParams(window.location.search);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
     const requestedDate = params.get("date");
     dateInput.value = requestedDate || today;
 
     let currentQuestionId = null;
     let allComments = [];
+
+    function getLocalDate() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+  }
 
     function isAdminViewer() {
       const user = window.HoopWatchAuth?.readStoredAuthUser?.();

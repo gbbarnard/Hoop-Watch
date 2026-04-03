@@ -348,16 +348,18 @@ body {
 }
 
 .game-teams {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    gap: 2rem;
-    margin-top: 1rem;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
 }
 
 .team {
-    flex: 1;
-    text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .team a {
@@ -376,13 +378,9 @@ body {
 }
 
 .team-logo {
-    width: 80px;
-    height: 80px;
-    margin-bottom: 0.75rem;
-    font-size: 3rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
 }
 
 .team-name {
@@ -405,9 +403,10 @@ body {
 }
 
 .vs {
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 1.2rem;
+  text-align: center;
+  font-weight: bold;
+  font-size: 18px;
+  opacity: 0.7;
 }
 
 .loading {
@@ -596,6 +595,7 @@ body {
 .team-logo {
     font-size: 5rem;
     margin-bottom: 1rem;
+    object-fit: contain;
 }
 
 .roster-section h2 {
@@ -680,10 +680,10 @@ body {
 }
 
 .team-score {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    flex: 1;
+  font-size: 36px;
+  font-weight: bold;
+  color: #2563eb;
+  margin-top: 8px;
 }
 
 .away-team-score {
