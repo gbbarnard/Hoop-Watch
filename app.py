@@ -4169,7 +4169,7 @@ def get_qotd_comments(question_id):
                 c.parent_comment_id,
                 c.comment_text,
                 c.created_at,
-                COALESCE(u.email, CONCAT('User ', u.user_id)) AS user_name,
+                COALESCE(u.username, CONCAT('User ', u.user_id)) AS user_name,
                 SUM(CASE WHEN v.vote_value = 1 THEN 1 ELSE 0 END) AS upvotes,
                 SUM(CASE WHEN v.vote_value = -1 THEN 1 ELSE 0 END) AS downvotes
             FROM qotd_comments c
@@ -4666,7 +4666,7 @@ def get_game_comments(game_identifier):
                 gc.parent_comment_id,
                 gc.comment_text,
                 gc.created_at,
-                COALESCE(u.email, CONCAT('User ', u.user_id)) AS user_name
+                COALESCE(u.username, CONCAT('User ', u.user_id)) AS user_name
             FROM game_comments gc
             JOIN users u ON gc.user_id = u.user_id
             WHERE gc.game_id = %s

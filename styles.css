@@ -2826,12 +2826,15 @@ body {
 .home-section-label {
     display: inline-flex;
     align-items: center;
-    font-size: 0.8rem;
+    justify-content: center;
+    margin-bottom: 12px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.1);
+    color: #2563eb;
     font-weight: 700;
+    font-size: 0.85rem;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--primary-color);
-    margin-bottom: 0.75rem;
 }
 
 .home-page-section {
