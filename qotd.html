@@ -43,22 +43,24 @@
   </main>
   <script src="auth.js"></script>
   <script>
+
     const dateInput = document.getElementById("dateSelector");
     const params = new URLSearchParams(window.location.search);
+
+    function getLocalDate() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+  }
+  
     const today = getLocalDate();
     const requestedDate = params.get("date");
     dateInput.value = requestedDate || today;
 
     let currentQuestionId = null;
     let allComments = [];
-
-    function getLocalDate() {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-  }
 
     function isAdminViewer() {
       const user = window.HoopWatchAuth?.readStoredAuthUser?.();
@@ -295,8 +297,49 @@
       loadComments(); // refresh UI
     }
 
+    async function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const messages = document.getElementById("chatMessages");
+
+      const text = input.value.trim();
+      if (!text) return;
+
+      messages.innerHTML += `<div class="chat-user"><span class="label">You:</span> ${text}</div>`;
+      input.value = "";
+
+      try {
+        const res = await fetch("http://localhost:8000/api/claude", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ prompt: text })
+        });
+
+        const data = await res.json();
+
+        messages.innerHTML += `<div class="chat-ai"><span class="label">AI:</span> ${data.response}</div>`;
+        messages.scrollTop = messages.scrollHeight;
+
+      } catch (err) {
+        console.error(err);
+        messages.innerHTML += `<div><strong>AI:</strong> Error connecting</div>`;
+      }
+    }
+    
     loadQuestion();
+
   </script>
+    <div id="chatbot">
+    <div id="chatbot-header">AI Assistant</div>
+
+    <div id="chatMessages"></div>
+
+    <div class="chat-input-row">
+      <input id="chatInput" type="text" placeholder="Ask about basketball..." />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
 </body>
 
 </html>

@@ -1,0 +1,95 @@
+{
+  "players_upserted": 597,
+  "stats_rows_upserted": 528,
+  "missing_player_mappings": [],
+  "players_still_missing_stats": [
+    {
+      "player_id": 1451,
+      "nba_player_id": "1630286",
+      "player_name": "Trevon Scott",
+      "team_abbreviation": "BKN",
+      "position": "F",
+      "jersey_number": null
+    },
+    {
+      "player_id": 236,
+      "nba_player_id": "202681",
+      "player_name": "Kyrie Irving",
+      "team_abbreviation": "DAL",
+      "position": "G",
+      "jersey_number": 11
+    },
+    {
+      "player_id": 291,
+      "nba_player_id": "1641803",
+      "player_name": "Tristen Newton",
+      "team_abbreviation": "HOU",
+      "position": "G",
+      "jersey_number": 0
+    },
+    {
+      "player_id": 286,
+      "nba_player_id": "1627832",
+      "player_name": "Fred VanVleet",
+      "team_abbreviation": "HOU",
+      "position": "G",
+      "jersey_number": 5
+    },
+    {
+      "player_id": 441,
+      "nba_player_id": "1630169",
+      "player_name": "Tyrese Haliburton",
+      "team_abbreviation": "IND",
+      "position": "G",
+      "jersey_number": 0
+    },
+    {
+      "player_id": 1670,
+      "nba_player_id": "1643253",
+      "player_name": "Toby Okani",
+      "team_abbreviation": "MEM",
+      "position": "F",
+      "jersey_number": null
+    },
+    {
+      "player_id": 1672,
+      "nba_player_id": "1641727",
+      "player_name": "Dariq Whitehead",
+      "team_abbreviation": "MEM",
+      "position": "G",
+      "jersey_number": 0
+    },
+    {
+      "player_id": 336,
+      "nba_player_id": "1626179",
+      "player_name": "Terry Rozier",
+      "team_abbreviation": "MIA",
+      "position": "G",
+      "jersey_number": 2
+    },
+    {
+      "player_id": 193,
+      "nba_player_id": "1642490",
+      "player_name": "Josh Oduro",
+      "team_abbreviation": "NOP",
+      "position": "C",
+      "jersey_number": 13
+    },
+    {
+      "player_id": 557,
+      "nba_player_id": "1642850",
+      "player_name": "Thomas Sorber",
+      "team_abbreviation": "OKC",
+      "position": "C",
+      "jersey_number": 12
+    },
+    {
+      "player_id": 497,
+      "nba_player_id": "203081",
+      "player_name": "Damian Lillard",
+      "team_abbreviation": "POR",
+      "position": "G",
+      "jersey_number": 0
+    }
+  ]
+}

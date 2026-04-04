@@ -325,6 +325,7 @@ async function runAdminSync(syncKey, button) {
     teams: 'sync-teams',
     standings: 'sync-standings',
     players: 'sync-players',
+    'player-stats': 'sync-player-stats',
     'completed-game-details': 'sync-completed-game-details'
   };
 
@@ -336,10 +337,44 @@ async function runAdminSync(syncKey, button) {
   button.textContent = 'Working...';
 
   try {
-    await fetchJson(`${ADMIN_API_BASE}/api/admin/${route}`, {
+    const data = await fetchJson(`${ADMIN_API_BASE}/api/admin/${route}`, {
       headers: getAdminHeaders()
     });
-    showAdminMessage(`${originalText} finished.`, 'success');
+
+    const detailBits = [];
+    if (Number.isFinite(data?.players_upserted)) {
+      detailBits.push(`players updated: ${data.players_upserted}`);
+    }
+    if (Number.isFinite(data?.stats_rows_upserted)) {
+      detailBits.push(`stat rows updated: ${data.stats_rows_upserted}`);
+    }
+    if (Number.isFinite(data?.players_still_missing_stats)) {
+      detailBits.push(`still missing stats: ${data.players_still_missing_stats}`);
+    }
+    if (Number.isFinite(data?.players_seen)) {
+      detailBits.push(`players seen: ${data.players_seen}`);
+    }
+    if (Number.isFinite(data?.players_bio_updated)) {
+      detailBits.push(`bios updated: ${data.players_bio_updated}`);
+    }
+    if (Number.isFinite(data?.fields_filled)) {
+      detailBits.push(`fields filled: ${data.fields_filled}`);
+    }
+    if (Number.isFinite(data?.players_missing_birth_date)) {
+      detailBits.push(`missing birth dates: ${data.players_missing_birth_date}`);
+    }
+    if (Number.isFinite(data?.players_missing_height)) {
+      detailBits.push(`missing heights: ${data.players_missing_height}`);
+    }
+    if (Number.isFinite(data?.players_missing_weight)) {
+      detailBits.push(`missing weights: ${data.players_missing_weight}`);
+    }
+
+    const successMessage = data?.message
+      ? `${data.message}${detailBits.length ? ` (${detailBits.join(' • ')})` : ''}`
+      : `${originalText} finished.`;
+
+    showAdminMessage(successMessage, 'success');
     await loadDashboardSummary();
   } catch (error) {
     showAdminMessage(error.message || `Could not run ${originalText}.`);

@@ -55,6 +55,8 @@ let currentTeam = null;
 let isFavorite = false;
 let teamGames = [];
 let activeTeamGamesFilter = 'all';
+const playerStatsCache = new Map();
+const playerDirectory = new Map();
 
 function getFavoriteUserIdOrWarn() {
   let saved = String(readSavedUserId() || '').trim();
@@ -163,6 +165,177 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function formatPlayerBirthDate(dateString) {
+  if (!dateString) return null;
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return dateString;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatPlayerInfoValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  return escapeHtml(value);
+}
+
+function buildPlayerInfoItems(player, payload) {
+  const info = payload?.player_info || {};
+  const merged = {
+    jersey: player?.jersey ?? info.jersey,
+    position: player?.position ?? info.position,
+    height: player?.height ?? info.height,
+    weight_lb: player?.weight_lb ?? info.weight_lb,
+    age: player?.age ?? info.age,
+    birth_date: player?.birth_date ?? info.birth_date,
+  };
+
+  const hasJersey =
+    merged.jersey !== null &&
+    merged.jersey !== undefined &&
+    String(merged.jersey).trim() !== '';
+
+  const hasWeight =
+    merged.weight_lb !== null &&
+    merged.weight_lb !== undefined &&
+    String(merged.weight_lb).trim() !== '';
+
+  return [
+    { label: 'Jersey', value: hasJersey ? `#${merged.jersey}` : null },
+    { label: 'Position', value: merged.position },
+    { label: 'Height', value: merged.height },
+    { label: 'Weight', value: hasWeight ? `${merged.weight_lb} lb` : null },
+    { label: 'Age', value: merged.age },
+    { label: 'Birth Date', value: formatPlayerBirthDate(merged.birth_date) },
+  ];
+}
+
+function formatPlayerStatValue(value, decimals = 1) {
+  if (value === null || value === undefined || value === '') return '-';
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return escapeHtml(value);
+  if (Number.isInteger(numeric)) return String(numeric);
+  return numeric.toFixed(decimals);
+}
+
+function renderPlayerStatsTable(payload, player = null) {
+  const regularSeason = payload?.regular_season;
+  const infoItems = buildPlayerInfoItems(player, payload);
+  const infoHtml = infoItems.map((item) => `
+    <div class="player-info-card">
+      <div class="player-info-label">${escapeHtml(item.label)}</div>
+      <div class="player-info-value">${formatPlayerInfoValue(item.value)}</div>
+    </div>
+  `).join('');
+
+  const statsSection = regularSeason ? `
+    <div class="player-stats-section-title">Season Stats</div>
+    <div class="player-stats-scroll">
+      <table class="player-stats-table">
+        <thead>
+          <tr>
+            <th>Stats</th>
+            <th>GP</th>
+            <th>MIN</th>
+            <th>FG%</th>
+            <th>3P%</th>
+            <th>FT%</th>
+            <th>REB</th>
+            <th>AST</th>
+            <th>BLK</th>
+            <th>STL</th>
+            <th>PF</th>
+            <th>TO</th>
+            <th>PTS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(regularSeason.season_label || 'Regular Season')}</td>
+            <td>${formatPlayerStatValue(regularSeason.gp, 0)}</td>
+            <td>${formatPlayerStatValue(regularSeason.min)}</td>
+            <td>${formatPlayerStatValue(regularSeason.fg_pct)}</td>
+            <td>${formatPlayerStatValue(regularSeason.fg3_pct)}</td>
+            <td>${formatPlayerStatValue(regularSeason.ft_pct)}</td>
+            <td>${formatPlayerStatValue(regularSeason.reb)}</td>
+            <td>${formatPlayerStatValue(regularSeason.ast)}</td>
+            <td>${formatPlayerStatValue(regularSeason.blk)}</td>
+            <td>${formatPlayerStatValue(regularSeason.stl)}</td>
+            <td>${formatPlayerStatValue(regularSeason.pf)}</td>
+            <td>${formatPlayerStatValue(regularSeason.to)}</td>
+            <td>${formatPlayerStatValue(regularSeason.pts)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  ` : `<div class="player-stats-empty">${escapeHtml(payload?.message || 'No stats available for this player yet.')}</div>`;
+
+  const showMetaMessage = Boolean(regularSeason && payload?.message);
+  const messageText = showMetaMessage ? escapeHtml(payload.message) : '';
+
+  return `
+    <div class="player-profile-panel">
+      <div class="player-profile-header">
+        <div>
+          <div class="player-profile-name">${escapeHtml(player?.name || payload?.player_name || 'Player')}</div>
+          <div class="player-profile-subtitle">Player information and regular season stats</div>
+        </div>
+      </div>
+      <div class="player-info-grid">${infoHtml}</div>
+      ${statsSection}
+      ${messageText ? `<div class="player-stats-meta">${messageText}</div>` : ''}
+    </div>
+  `;
+}
+
+function closeRosterDropdowns(exceptRow = null) {
+  document.querySelectorAll('.roster-player-row.expanded').forEach((row) => {
+    if (exceptRow && row === exceptRow) return;
+    row.classList.remove('expanded');
+    row.setAttribute('aria-expanded', 'false');
+    const statsRow = row.nextElementSibling;
+    if (statsRow && statsRow.classList.contains('roster-player-stats-row')) {
+      statsRow.classList.add('hidden');
+    }
+  });
+}
+
+async function toggleRosterPlayerStats(row) {
+  if (!row) return;
+
+  const statsRow = row.nextElementSibling;
+  if (!statsRow || !statsRow.classList.contains('roster-player-stats-row')) return;
+
+  const isOpen = row.classList.contains('expanded');
+  closeRosterDropdowns(row);
+
+  if (isOpen) {
+    row.classList.remove('expanded');
+    row.setAttribute('aria-expanded', 'false');
+    statsRow.classList.add('hidden');
+    return;
+  }
+
+  row.classList.add('expanded');
+  row.setAttribute('aria-expanded', 'true');
+  statsRow.classList.remove('hidden');
+
+  const shell = statsRow.querySelector('.player-stats-shell');
+  const playerId = row.dataset.playerId;
+  if (!shell || !playerId) return;
+
+  if (!playerStatsCache.has(playerId)) {
+    shell.innerHTML = `<div class="player-stats-loading">Loading player stats…</div>`;
+    try {
+      const stats = await fetchJson(`${API_BASE}/api/players/${playerId}/stats`);
+      playerStatsCache.set(playerId, stats);
+    } catch (error) {
+      shell.innerHTML = `<div class="player-stats-error">Could not load player stats. ${escapeHtml(error.message || '')}</div>`;
+      return;
+    }
+  }
+
+  shell.innerHTML = renderPlayerStatsTable(playerStatsCache.get(playerId), playerDirectory.get(String(playerId)) || null);
 }
 
 function canOpenTeamGameDetail(game) {
@@ -275,72 +448,69 @@ async function fetchTeamGames(teamId) {
   }
 }
 
+async function fetchTeamRoster(teamId) {
+  return fetchJson(`${API_BASE}/api/teams/${teamId}/roster`);
+}
+
+async function loadRosterForTeam(teamId, tbody) {
+  try {
+    const players = await fetchTeamRoster(teamId);
+    displayRoster(players);
+  } catch (rosterErr) {
+    console.error('Roster error:', rosterErr);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">Roster unavailable. Backend error: <code>${rosterErr.message}</code></td></tr>`;
+    }
+  }
+}
+
+async function loadTeamPageByInternalId(teamId, tbody) {
+  const team = await fetchJson(`${API_BASE}/api/teams/${teamId}`);
+  currentTeam = team;
+  await displayTeamHeader(team);
+  await refreshFavoriteStatus();
+  await loadRosterForTeam(teamId, tbody);
+  await fetchTeamGames(teamId);
+}
+
+async function resolveInternalTeamId(rawId) {
+  const isLikelyNbaId = /^\d{9,}$/.test(String(rawId)) && Number(rawId) > 1600000000;
+  if (!isLikelyNbaId) return rawId;
+
+  const allTeams = await fetchJson(`${API_BASE}/api/teams`);
+  const match = Array.isArray(allTeams)
+    ? allTeams.find((team) => String(team.nba_team_id) === String(rawId))
+    : null;
+
+  return match?.id || null;
+}
+
 async function fetchTeamData() {
   const rawId = getTeamId();
   if (!rawId) {
-    document.body.innerHTML = "<p>Team not found</p>";
+    document.body.innerHTML = '<p>Team not found</p>';
     return;
   }
 
-  const isLikelyNbaId = /^\d{9,}$/.test(String(rawId)) && Number(rawId) > 1600000000;
-
-  const tbody = document.getElementById("roster-tbody");
+  const tbody = document.getElementById('roster-tbody');
   if (tbody) {
     tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">Loading roster…</td></tr>`;
   }
 
-  let internalId = rawId;
   try {
-    const team = await fetchJson(`${API_BASE}/api/teams/${internalId}`);
-    currentTeam = team;
-    await displayTeamHeader(team);
-    await refreshFavoriteStatus();
-
-    try {
-      const players = await fetchJson(`${API_BASE}/api/teams/${internalId}/players`);
-      displayRoster(players);
-    } catch (rosterErr) {
-      console.error("Roster error:", rosterErr);
-      if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">Roster unavailable. Backend error: <code>${rosterErr.message}</code></td></tr>`;
-      }
-    }
-
-    await fetchTeamGames(internalId);
-
+    await loadTeamPageByInternalId(rawId, tbody);
   } catch (error) {
-    if (isLikelyNbaId) {
-      try {
-        const allTeams = await fetchJson(`${API_BASE}/api/teams`);
-        const match = Array.isArray(allTeams)
-          ? allTeams.find(t => String(t.nba_team_id) === String(rawId))
-          : null;
-
-        if (match && match.id) {
-          internalId = match.id;
-          const team = await fetchJson(`${API_BASE}/api/teams/${internalId}`);
-          currentTeam = team;
-          await displayTeamHeader(team);
-          await refreshFavoriteStatus();
-
-          try {
-            const players = await fetchJson(`${API_BASE}/api/teams/${internalId}/players`);
-            displayRoster(players);
-          } catch (rosterErr) {
-            console.error("Roster error:", rosterErr);
-            if (tbody) {
-              tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">Roster unavailable. Backend error: <code>${rosterErr.message}</code></td></tr>`;
-            }
-          }
-          await fetchTeamGames(internalId);
-          return;
-        }
-      } catch (e2) {
-        console.error("NBA id resolve failed:", e2);
+    try {
+      const resolvedInternalId = await resolveInternalTeamId(rawId);
+      if (resolvedInternalId) {
+        await loadTeamPageByInternalId(resolvedInternalId, tbody);
+        return;
       }
+    } catch (resolveError) {
+      console.error('NBA id resolve failed:', resolveError);
     }
 
-    console.error("Error fetching team data:", error);
+    console.error('Error fetching team data:', error);
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">Could not load team. Backend error: <code>${error.message}</code></td></tr>`;
     }
@@ -444,6 +614,8 @@ async function displayTeamHeader(team) {
 function displayRoster(players) {
   const tbody = document.getElementById("roster-tbody");
   tbody.innerHTML = "";
+  closeRosterDropdowns();
+  playerDirectory.clear();
 
   if (!Array.isArray(players) || players.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;">No roster returned.</td></tr>`;
@@ -451,21 +623,47 @@ function displayRoster(players) {
   }
 
   players.forEach((p) => {
+    const playerIdKey = String(p.id || '');
+    if (playerIdKey) {
+      playerDirectory.set(playerIdKey, p);
+    }
+
     const row = document.createElement("tr");
+    row.className = 'roster-player-row';
 
     const playerId = p.id || 0;
+    if (playerId) row.dataset.playerId = String(playerId);
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-expanded', 'false');
     const imgHtml = playerId
-      ? `<img src="${p.headshot_url || headshotUrl(playerId)}" alt="${p.name}" style="width:48px;height:36px;object-fit:cover;border-radius:6px;" onerror="this.style.display='none'">`
+      ? `<img src="${p.headshot_url || headshotUrl(playerId)}" alt="${escapeHtml(p.name)}" style="width:48px;height:36px;object-fit:cover;border-radius:6px;" onerror="this.style.display='none'">`
       : "";
 
     row.innerHTML = `
       <td style="padding:10px 12px;">${imgHtml}</td>
-      <td style="padding:10px 12px;">${p.jersey ?? "-"}</td>
-      <td style="padding:10px 12px; font-weight:600;">${p.name ?? ""}</td>
-      <td style="padding:10px 12px;">${p.position ?? "-"}</td>
-      <td style="padding:10px 12px;">${p.height ?? "-"}</td>
+      <td style="padding:10px 12px;">${escapeHtml(p.jersey ?? "-")}</td>
+      <td style="padding:10px 12px; font-weight:600;">
+        <div class="roster-player-name-cell">
+          <span>${escapeHtml(p.name ?? "")}</span>
+          <span class="roster-expand-indicator" aria-hidden="true">▾</span>
+        </div>
+      </td>
+      <td style="padding:10px 12px;">${escapeHtml(p.position ?? "-")}</td>
+      <td style="padding:10px 12px;">${escapeHtml(p.height ?? "-")}</td>
     `;
     tbody.appendChild(row);
+
+    const statsRow = document.createElement('tr');
+    statsRow.className = 'roster-player-stats-row hidden';
+    statsRow.innerHTML = `
+      <td colspan="5">
+        <div class="player-stats-shell">
+          <div class="player-stats-empty">Click this player to view player information and regular season stats.</div>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(statsRow);
   });
 }
 
@@ -490,6 +688,12 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  const rosterRow = event.target.closest('.roster-player-row[data-player-id]');
+  if (rosterRow) {
+    toggleRosterPlayerStats(rosterRow);
+    return;
+  }
+
   const detailCard = event.target.closest('.clickable-game-card[data-detail-href]');
   if (detailCard) {
     if (event.target.closest('a, button')) return;
@@ -498,6 +702,13 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  const rosterRow = event.target.closest('.roster-player-row[data-player-id]');
+  if (rosterRow && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    toggleRosterPlayerStats(rosterRow);
+    return;
+  }
+
   const detailCard = event.target.closest('.clickable-game-card[data-detail-href]');
   if (!detailCard) return;
   if (event.key !== 'Enter' && event.key !== ' ') return;
