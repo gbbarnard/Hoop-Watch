@@ -15,6 +15,7 @@ import sys
 import requests
 from collections import defaultdict
 from dotenv import load_dotenv
+import anthropic
 
 # Load environment variables from a local .env file (if present)
 load_dotenv()
@@ -34,6 +35,60 @@ from nba_api.stats.endpoints import leaguestandings
 app = Flask(__name__)
 CORS(app)
 
+
+# ================= CLAUDE AI SETUP =================
+
+client = anthropic.Anthropic(
+    api_key="" 
+)
+
+# ================= CLAUDE CHAT ENDPOINT =================
+
+@app.route("/api/claude", methods=["POST"])
+def claude_chat():
+    try:
+        data = request.get_json()
+        prompt = data.get("prompt", "")
+
+        if not prompt:
+            return jsonify({"error": "Prompt is required"}), 400
+
+        # Optional: make it basketball-focused
+        full_prompt = f"You are a basketball expert AI. Answer clearly:\n{prompt}"
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            messages=[
+        {
+            "role": "user",
+            "content": f"""
+            You are a basketball expert.
+
+            Respond in STRICT plain text.
+            - No markdown
+            - No asterisks
+            - No bullet points
+            - No emojis
+            - No special symbols
+            - Use full sentences only
+
+                Question: {prompt}
+                        """
+        }
+    ]
+)
+        
+
+        return jsonify({
+            "response": response.content[0].text
+        })
+
+    except Exception as e:
+        print("Claude error:", e)
+        return jsonify({"error": "Claude request failed"}), 500
+
+
 # ================= DATABASE CONFIG =================
 
 db_config = {
@@ -41,7 +96,7 @@ db_config = {
     "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
     "port": int(os.environ.get("MYSQL_PORT", "3306")),
     "user": os.environ.get("MYSQL_USER", "root"),
-    "password": os.environ.get("MYSQL_PASSWORD", "AmoDodoMyBaby797$"),  # set in env if needed
+    "password": os.environ.get("MYSQL_PASSWORD", "YOURPASSWORDHERE"),  # set in env if needed
     # Support either MYSQL_DATABASE or MYSQL_DB
     "database": os.environ.get("MYSQL_DATABASE") or os.environ.get("MYSQL_DB") or "hoopwatch",
 }

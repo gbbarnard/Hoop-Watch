@@ -7,6 +7,8 @@ let searchTerm = '';
 let watchlistedGameIds = new Set();
 let alertGameIds = new Set();
 
+const gameDatePicker = document.getElementById('gameDatePicker');
+
 function readSavedUserId() {
   return localStorage.getItem(USER_ID_STORAGE_KEY) || '';
 }
@@ -15,7 +17,7 @@ function getUserIdFromStorageOrPrompt() {
   const saved = Number(String(readSavedUserId()).trim());
   if (saved > 0) return saved;
 
-  alert('Please log in to save game alerts and watchlisted games.');
+  alert('Please log in to save game alerts and watchlist games.');
   window.location.href = 'login.html';
   return null;
 }
@@ -172,6 +174,11 @@ function createSeasonGameCard(game) {
 
 function getFilteredGames() {
   return allGames.filter((game) => {
+    if (gameDatePicker && gameDatePicker.value) {
+      const gameDate = String(game.game_date || '');
+      if (gameDate !== gameDatePicker.value) return false;
+    }
+
     const matchesSearch = gameMatchesSearch(game, searchTerm);
     if (!matchesSearch) return false;
 
@@ -451,6 +458,10 @@ document.addEventListener('keydown', (event) => {
 document.getElementById('games-search-input')?.addEventListener('input', (event) => {
   searchTerm = event.target.value.trim();
   renderGames();
+});
+
+gameDatePicker?.addEventListener('change', () => {
+  renderGames(); 
 });
 
 loadSeasonGames();
