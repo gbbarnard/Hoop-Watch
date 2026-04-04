@@ -3123,3 +3123,37 @@ body {
 .chat-input-row button {
     width: 80px;
 }
+
+.chat-user .label {
+  color: rgb(168, 245, 171); /* green */
+  font-weight: bold;
+}
+
+.chat-ai .label {
+  color: #91c6f1; /* blue */
+  font-weight: bold;
+}
+
+.chat-user {
+  margin-bottom: 8px;
+}
+
+.chat-ai {
+  margin-bottom: 8px;
+}
+
+.chat-user {
+  background: #2e7d32;
+  padding: 8px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  color: white;
+}
+
+.chat-ai {
+  background: #1565c0;
+  padding: 8px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  color: white;
+}

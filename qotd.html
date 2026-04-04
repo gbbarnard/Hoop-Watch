@@ -287,7 +287,38 @@
       loadComments(); // refresh UI
     }
 
+    async function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const messages = document.getElementById("chatMessages");
+
+      const text = input.value.trim();
+      if (!text) return;
+
+      messages.innerHTML += `<div class="chat-user"><span class="label">You:</span> ${text}</div>`;
+      input.value = "";
+
+      try {
+        const res = await fetch("http://localhost:8000/api/claude", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ prompt: text })
+        });
+
+        const data = await res.json();
+
+        messages.innerHTML += `<div class="chat-ai"><span class="label">AI:</span> ${data.response}</div>`;
+        messages.scrollTop = messages.scrollHeight;
+
+      } catch (err) {
+        console.error(err);
+        messages.innerHTML += `<div><strong>AI:</strong> Error connecting</div>`;
+      }
+    }
+    
     loadQuestion();
+
   </script>
     <div id="chatbot">
     <div id="chatbot-header">AI Assistant</div>

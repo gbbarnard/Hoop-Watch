@@ -20,6 +20,8 @@ import anthropic
 # Load environment variables from a local .env file (if present)
 load_dotenv()
 
+
+
 from flask import Flask, jsonify, send_from_directory, request
 from functools import wraps
 from flask_cors import CORS
@@ -39,7 +41,7 @@ CORS(app)
 # ================= CLAUDE AI SETUP =================
 
 client = anthropic.Anthropic(
-    api_key="" 
+    api_key=os.getenv("ANTHROPIC_API_KEY")
 )
 
 # ================= CLAUDE CHAT ENDPOINT =================
@@ -53,8 +55,7 @@ def claude_chat():
         if not prompt:
             return jsonify({"error": "Prompt is required"}), 400
 
-        # Optional: make it basketball-focused
-        full_prompt = f"You are a basketball expert AI. Answer clearly:\n{prompt}"
+        full_prompt = f"You are a basketball expert AI.:\n{prompt}"
 
         response = client.messages.create(
             model="claude-sonnet-4-6",
@@ -72,6 +73,7 @@ def claude_chat():
             - No emojis
             - No special symbols
             - Use full sentences only
+            - Keep answers concise and to the point, unless asked for more details.
 
                 Question: {prompt}
                         """
@@ -79,7 +81,6 @@ def claude_chat():
     ]
 )
         
-
         return jsonify({
             "response": response.content[0].text
         })
