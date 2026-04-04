@@ -351,6 +351,24 @@ async function runAdminSync(syncKey, button) {
     if (Number.isFinite(data?.players_still_missing_stats)) {
       detailBits.push(`still missing stats: ${data.players_still_missing_stats}`);
     }
+    if (Number.isFinite(data?.players_seen)) {
+      detailBits.push(`players seen: ${data.players_seen}`);
+    }
+    if (Number.isFinite(data?.players_bio_updated)) {
+      detailBits.push(`bios updated: ${data.players_bio_updated}`);
+    }
+    if (Number.isFinite(data?.fields_filled)) {
+      detailBits.push(`fields filled: ${data.fields_filled}`);
+    }
+    if (Number.isFinite(data?.players_missing_birth_date)) {
+      detailBits.push(`missing birth dates: ${data.players_missing_birth_date}`);
+    }
+    if (Number.isFinite(data?.players_missing_height)) {
+      detailBits.push(`missing heights: ${data.players_missing_height}`);
+    }
+    if (Number.isFinite(data?.players_missing_weight)) {
+      detailBits.push(`missing weights: ${data.players_missing_weight}`);
+    }
 
     const successMessage = data?.message
       ? `${data.message}${detailBits.length ? ` (${detailBits.join(' • ')})` : ''}`

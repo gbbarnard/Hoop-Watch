@@ -190,11 +190,21 @@ function buildPlayerInfoItems(player, payload) {
     birth_date: player?.birth_date ?? info.birth_date,
   };
 
+  const hasJersey =
+    merged.jersey !== null &&
+    merged.jersey !== undefined &&
+    String(merged.jersey).trim() !== '';
+
+  const hasWeight =
+    merged.weight_lb !== null &&
+    merged.weight_lb !== undefined &&
+    String(merged.weight_lb).trim() !== '';
+
   return [
-    { label: 'Jersey', value: merged.jersey ? `#${merged.jersey}` : null },
+    { label: 'Jersey', value: hasJersey ? `#${merged.jersey}` : null },
     { label: 'Position', value: merged.position },
     { label: 'Height', value: merged.height },
-    { label: 'Weight', value: merged.weight_lb ? `${merged.weight_lb} lb` : null },
+    { label: 'Weight', value: hasWeight ? `${merged.weight_lb} lb` : null },
     { label: 'Age', value: merged.age },
     { label: 'Birth Date', value: formatPlayerBirthDate(merged.birth_date) },
   ];

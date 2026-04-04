@@ -79,3 +79,13 @@ python audit_repair_nba_player_ids.py --only-missing-stats --apply
 ```
 
 This uses only the local cached NBA CDN box score files. It will not guess when the match is ambiguous.
+
+
+## One-time player bios backfill
+Use this once when you want to fill missing player bio info like jersey number, position, height, weight, and birth date.
+
+```bash
+python sync_player_bios_once.py
+```
+
+It only fills missing player bio fields and does not overwrite good existing values with blanks.

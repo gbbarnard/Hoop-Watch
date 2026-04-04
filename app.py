@@ -6,6 +6,7 @@ Connects to hoopwatch MySQL database and serves team/player data
 import os
 import json
 import datetime
+import html
 import re
 import time
 import secrets
@@ -52,6 +53,7 @@ AUTH_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 AUTH_SESSIONS = {}
 PLAYER_STATS_SUMMARY_CACHE = {}
 PLAYER_STATS_CACHE_TTL_SECONDS = 60 * 10
+THESPORTSDB_API_BASE = "https://www.thesportsdb.com/api/v1/json/123"
 
 
 def _make_json_safe(value):
@@ -942,7 +944,7 @@ def _get_table_columns(connection, table_name):
 
 def _parse_height_to_inches(height_str):
     """
-    Convert heights like '6-8' to total inches.
+    Convert heights like '6-8' or 6'8" to total inches.
     Returns None if parsing fails.
     """
     if not height_str:
@@ -950,9 +952,9 @@ def _parse_height_to_inches(height_str):
 
     try:
         s = str(height_str).strip()
-        if "-" in s:
-            ft, inch = s.split("-")
-            return int(ft) * 12 + int(inch)
+        match = re.search(r"(\d+)\s*[-']\s*(\d+)", s)
+        if match:
+            return int(match.group(1)) * 12 + int(match.group(2))
     except Exception:
         pass
 
@@ -2307,7 +2309,436 @@ def sync_players():
         connection.close()
 
 
-# ================= STATIC ROUTES =================
+
+def _normalize_person_key(text):
+    if not text:
+        return ""
+
+    cleaned = str(text).strip().lower()
+    cleaned = cleaned.replace('&', ' and ')
+    cleaned = re.sub(r"[.'`-]", '', cleaned)
+    cleaned = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", ' ', cleaned)
+    cleaned = re.sub(r"[^a-z0-9]+", ' ', cleaned)
+    return ' '.join(cleaned.split())
+
+
+def _build_person_keys(first_name=None, last_name=None, full_name=None):
+    keys = set()
+
+    if full_name:
+        normalized = _normalize_person_key(full_name)
+        if normalized:
+            keys.add(normalized)
+
+    assembled = f"{(first_name or '').strip()} {(last_name or '').strip()}".strip()
+    if assembled:
+        normalized = _normalize_person_key(assembled)
+        if normalized:
+            keys.add(normalized)
+
+    return {key for key in keys if key}
+
+
+def _normalize_bio_position(position):
+    if not position:
+        return None
+
+    raw = str(position).strip()
+    if not raw:
+        return None
+
+    direct = _normalize_position(raw)
+    if direct:
+        return direct
+
+    lowered = raw.lower()
+    mapping = [
+        ('point guard', 'PG'),
+        ('shooting guard', 'SG'),
+        ('small forward', 'SF'),
+        ('power forward', 'PF'),
+        ('center', 'C'),
+        ('guard', 'G'),
+        ('forward', 'F'),
+    ]
+    for phrase, short in mapping:
+        if phrase in lowered:
+            return short
+
+    compact = lowered.replace('/', '-').replace(' ', '-')
+    combo_map = {
+        'guard-forward': 'G',
+        'forward-guard': 'F',
+        'forward-center': 'F',
+        'center-forward': 'C',
+        'guard-center': 'G',
+        'center-guard': 'C',
+    }
+    if compact in combo_map:
+        return combo_map[compact]
+
+    return None
+
+
+def _parse_weight_to_lb(weight_value):
+    if weight_value in (None, '', ' '):
+        return None
+
+    text = str(weight_value).strip().lower()
+    if not text:
+        return None
+
+    match = re.search(r'(\d+(?:\.\d+)?)', text)
+    if not match:
+        return None
+
+    try:
+        number = float(match.group(1))
+    except Exception:
+        return None
+
+    if 'kg' in text:
+        return int(round(number * 2.20462))
+
+    return int(round(number))
+
+
+def _parse_birth_date_to_sql(value):
+    if not value:
+        return None
+
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+
+    match = re.search(r'(\d{4}-\d{2}-\d{2})', str(value).strip())
+    return match.group(1) if match else None
+
+def _strip_html_to_text(html_text):
+    if not html_text:
+        return ''
+
+    cleaned = re.sub(r'<(script|style)\b[^>]*>.*?</\1>', ' ', html_text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r'<[^>]+>', ' ', cleaned)
+    cleaned = html.unescape(cleaned)
+    cleaned = cleaned.replace(' ', ' ')
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
+
+
+def _parse_long_birth_date_to_sql(value):
+    if not value:
+        return None
+
+    direct = _parse_birth_date_to_sql(value)
+    if direct:
+        return direct
+
+    text = str(value).strip()
+    for fmt in ('%B %d, %Y', '%b %d, %Y'):
+        try:
+            return datetime.datetime.strptime(text, fmt).date().isoformat()
+        except Exception:
+            pass
+    return None
+
+
+def _extract_labeled_value(text, label, pattern):
+    match = re.search(rf'\b{label}\b\s+({pattern})', text, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def _fetch_nba_player_profile_bio(nba_player_id, timeout=20):
+    player_id = str(nba_player_id or '').strip()
+    if not player_id:
+        return None
+
+    url = f'https://www.nba.com/player/{player_id}'
+    response = requests.get(
+        url,
+        headers={'User-Agent': 'HoopWatch/1.0', 'Accept-Language': 'en-US,en;q=0.9'},
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+
+    text = _strip_html_to_text(response.text)
+    if not text:
+        return None
+
+    heading_match = re.search(
+        r"([A-Za-z .\'-]+?)\s*\|\s*#?(\d{1,3})\s*\|\s*([A-Za-z\-/ ]+?)\s+(?:#|[A-Z]{2,}|PPG|RPG|APG|HEIGHT|WEIGHT)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    jersey_number = heading_match.group(2).strip() if heading_match else None
+    position = _normalize_bio_position(heading_match.group(3).strip()) if heading_match else None
+
+    height_raw = _extract_labeled_value(text, 'HEIGHT', r"\d+'\d+\"(?:\s*\([^)]+\))?")
+    weight_raw = _extract_labeled_value(text, 'WEIGHT', r'\d+lb(?:\s*\([^)]+\))?')
+    birth_raw = _extract_labeled_value(text, 'BIRTHDATE', r'[A-Za-z]+\s+\d{1,2},\s+\d{4}')
+
+    return {
+        'jersey_number': jersey_number or None,
+        'position': position or None,
+        'height_in': _parse_height_to_inches(height_raw),
+        'weight_lb': _parse_weight_to_lb(weight_raw),
+        'birth_date': _parse_long_birth_date_to_sql(birth_raw),
+        'profile_url': response.url,
+    }
+
+
+
+def _sportsdb_get_json(endpoint, params=None, timeout=25):
+    response = requests.get(
+        f"{THESPORTSDB_API_BASE}/{endpoint}",
+        params=params or {},
+        headers={'User-Agent': 'HoopWatch/1.0'},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data if isinstance(data, dict) else {}
+
+
+def _sportsdb_fetch_nba_teams():
+    attempts = [
+        {'l': 'NBA'},
+        {'l': 'National Basketball Association'},
+        {'s': 'Basketball', 'c': 'USA'},
+    ]
+
+    best_rows = []
+    for params in attempts:
+        data = _sportsdb_get_json('search_all_teams.php', params=params, timeout=25)
+        rows = data.get('teams') or []
+        filtered = []
+        for row in rows:
+            sport = str(row.get('strSport') or '').strip().lower()
+            if sport and sport != 'basketball':
+                continue
+
+            league_blob = ' '.join(
+                str(row.get(key) or '')
+                for key in ('strLeague', 'strLeague2', 'strLeague3', 'strLeague4', 'strLeague5', 'strLeague6', 'strLeague7')
+            ).lower()
+
+            if params.get('c'):
+                if 'nba' in league_blob or 'national basketball association' in league_blob:
+                    filtered.append(row)
+            else:
+                filtered.append(row)
+
+        candidates = filtered or rows
+        if len(candidates) >= 25:
+            return candidates
+        if len(candidates) > len(best_rows):
+            best_rows = candidates
+
+    return best_rows
+
+
+def _sportsdb_team_keys(team_row):
+    keys = set()
+    for value in [team_row.get('strTeam'), team_row.get('strTeamShort'), team_row.get('strAlternate')]:
+        if not value:
+            continue
+        parts = re.split(r'[,;/|]', str(value))
+        for part in parts:
+            normalized = _normalize_person_key(part)
+            if normalized:
+                keys.add(normalized)
+    return keys
+
+
+def _match_sportsdb_team(db_team_row, sportsdb_teams):
+    db_keys = set()
+    full_name = f"{(db_team_row.get('city') or '').strip()} {(db_team_row.get('name') or '').strip()}".strip()
+    for value in [full_name, db_team_row.get('name'), db_team_row.get('abbreviation')]:
+        normalized = _normalize_person_key(value)
+        if normalized:
+            db_keys.add(normalized)
+
+    best_match = None
+    best_score = -1
+
+    for sportsdb_team in sportsdb_teams:
+        candidate_keys = _sportsdb_team_keys(sportsdb_team)
+        score = 0
+
+        full_key = _normalize_person_key(full_name)
+        short_key = _normalize_person_key(db_team_row.get('name'))
+        if full_key and full_key in candidate_keys:
+            score = 100
+        elif short_key and short_key in candidate_keys:
+            score = 80
+        elif db_keys & candidate_keys:
+            score = 60
+
+        league_blob = ' '.join(
+            str(sportsdb_team.get(key) or '')
+            for key in ('strLeague', 'strLeague2', 'strLeague3', 'strLeague4', 'strLeague5', 'strLeague6', 'strLeague7')
+        ).lower()
+        if 'nba' in league_blob or 'national basketball association' in league_blob:
+            score += 10
+
+        if score > best_score:
+            best_score = score
+            best_match = sportsdb_team
+
+    return best_match if best_score >= 60 else None
+
+
+def _update_player_bio_fields(cursor, player_id, position=None, jersey_number=None, height_in=None, weight_lb=None, birth_date=None):
+    cursor.execute(
+        """
+        UPDATE players
+        SET
+            position = CASE
+                WHEN (position IS NULL OR TRIM(position) = '') AND %s IS NOT NULL THEN %s
+                ELSE position
+            END,
+            jersey_number = CASE
+                WHEN (jersey_number IS NULL OR TRIM(jersey_number) = '') AND %s IS NOT NULL THEN %s
+                ELSE jersey_number
+            END,
+            height_in = CASE
+                WHEN height_in IS NULL AND %s IS NOT NULL THEN %s
+                ELSE height_in
+            END,
+            weight_lb = CASE
+                WHEN weight_lb IS NULL AND %s IS NOT NULL THEN %s
+                ELSE weight_lb
+            END,
+            birth_date = CASE
+                WHEN birth_date IS NULL AND %s IS NOT NULL THEN %s
+                ELSE birth_date
+            END
+        WHERE player_id = %s
+        """,
+        (
+            position, position,
+            jersey_number, jersey_number,
+            height_in, height_in,
+            weight_lb, weight_lb,
+            birth_date, birth_date,
+            player_id,
+        )
+    )
+
+
+def sync_player_bios_from_nba_profiles():
+    """Backfill missing player bio fields from official NBA.com player profile pages."""
+    connection = get_db_connection()
+    if not connection:
+        raise RuntimeError('Database connection failed')
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT player_id, nba_player_id, first_name, last_name, position, jersey_number, height_in, weight_lb, birth_date
+            FROM players
+            WHERE nba_player_id IS NOT NULL
+              AND (
+                    position IS NULL OR TRIM(position) = '' OR
+                    jersey_number IS NULL OR TRIM(jersey_number) = '' OR
+                    height_in IS NULL OR
+                    weight_lb IS NULL OR
+                    birth_date IS NULL
+              )
+            ORDER BY player_id
+            """
+        )
+        db_players = cursor.fetchall() or []
+        if not db_players:
+            cursor.close()
+            return {
+                'message': 'player bios synced',
+                'source': 'NBA.com player profile pages',
+                'players_seen': 0,
+                'players_bio_updated': 0,
+                'fields_filled': 0,
+                'players_missing_birth_date': 0,
+                'players_missing_height': 0,
+                'players_missing_weight': 0,
+                'errors': [],
+            }
+
+        players_seen = 0
+        players_bio_updated = 0
+        fields_filled = 0
+        errors = []
+
+        for db_player in db_players:
+            nba_player_id = str(db_player.get('nba_player_id') or '').strip()
+            if not nba_player_id:
+                continue
+
+            players_seen += 1
+            try:
+                bio = _fetch_nba_player_profile_bio(nba_player_id)
+            except Exception as exc:
+                player_name = f"{(db_player.get('first_name') or '').strip()} {(db_player.get('last_name') or '').strip()}".strip() or nba_player_id
+                errors.append(f"{player_name} ({nba_player_id}): {exc}")
+                print(f"player bio profile fetch failed for {player_name} ({nba_player_id}): {exc}")
+                time.sleep(0.2)
+                continue
+
+            if not bio:
+                continue
+
+            field_changes = 0
+            if not db_player.get('position') and bio.get('position'):
+                field_changes += 1
+            if not db_player.get('jersey_number') and bio.get('jersey_number'):
+                field_changes += 1
+            if db_player.get('height_in') is None and bio.get('height_in') is not None:
+                field_changes += 1
+            if db_player.get('weight_lb') is None and bio.get('weight_lb') is not None:
+                field_changes += 1
+            if not db_player.get('birth_date') and bio.get('birth_date'):
+                field_changes += 1
+
+            if field_changes:
+                _update_player_bio_fields(
+                    cursor,
+                    db_player['player_id'],
+                    position=bio.get('position'),
+                    jersey_number=bio.get('jersey_number'),
+                    height_in=bio.get('height_in'),
+                    weight_lb=bio.get('weight_lb'),
+                    birth_date=bio.get('birth_date'),
+                )
+                players_bio_updated += 1
+                fields_filled += field_changes
+
+            time.sleep(0.15)
+
+        connection.commit()
+
+        cursor.execute("SELECT COUNT(*) AS count_missing FROM players WHERE birth_date IS NULL")
+        missing_birth_dates = int((cursor.fetchone() or {}).get('count_missing') or 0)
+        cursor.execute("SELECT COUNT(*) AS count_missing FROM players WHERE height_in IS NULL")
+        missing_heights = int((cursor.fetchone() or {}).get('count_missing') or 0)
+        cursor.execute("SELECT COUNT(*) AS count_missing FROM players WHERE weight_lb IS NULL")
+        missing_weights = int((cursor.fetchone() or {}).get('count_missing') or 0)
+        cursor.close()
+
+        return {
+            'message': 'player bios synced',
+            'source': 'NBA.com player profile pages',
+            'players_seen': players_seen,
+            'players_bio_updated': players_bio_updated,
+            'fields_filled': fields_filled,
+            'players_missing_birth_date': missing_birth_dates,
+            'players_missing_height': missing_heights,
+            'players_missing_weight': missing_weights,
+            'errors': errors[:10],
+        }
+    finally:
+        connection.close()
+
+
 
 @app.route('/database/Logos/<path:filename>')
 def team_logos(filename):
@@ -2349,6 +2780,16 @@ def admin_sync_players():
     except Exception as e:
         print(f"sync_players failed: {e}")
         return jsonify({"error": "sync-players failed", "details": str(e)}), 502
+
+@app.route('/api/admin/sync-player-bios')
+@admin_required
+def admin_sync_player_bios():
+    try:
+        result = sync_player_bios_from_nba_profiles()
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"sync_player_bios_from_nba_profiles failed: {e}")
+        return jsonify({'error': 'sync-player-bios failed', 'details': str(e)}), 502
 
 def _run_player_stats_sync_job():
     script_path = os.path.join(app.root_path, 'sync_player_stats_free.py')
